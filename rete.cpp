@@ -86,6 +86,12 @@ enum WMEFieldType { None = (-1), Ident = 0, Attr = 1, Val = 2, NumFields=3 };
 struct WME {
     string fields[3];
     string get_field(WMEFieldType ty) const { assert(ty != None); return fields[ty]; }
+
+    WME(string id, string attr, string val) {
+        fields[WMEFieldType::Ident] = id;
+        fields[WMEFieldType::Attr] = attr;
+        fields[WMEFieldType::Val] = val;
+    }
 };
 
 // pg 22
@@ -113,12 +119,22 @@ struct ConstTestNode {
     string field_must_equal;
     AlphaMemory *output_memory;
     vector<ConstTestNode *> children;
+
+    static ConstTestNode *dummy_top() {
+        ConstTestNode *node = new ConstTestNode;
+        node->field_to_test = WMEFieldType::None;
+        node->field_must_equal = "-42";
+        node->output_memory = nullptr;
+        return node;
+    }
 };
 
 // pg 22
 struct Token {
     Token *parent; // items [0..i-1]
     WME wme; // item i
+
+    Token(WME wme, Token *parent) : wme(wme), parent(parent) {}
 
     // implicitly stated on pages:
     // - pg 20
@@ -141,8 +157,8 @@ struct BetaMemory : public ReteNode {
     // pg 23: dodgy! the types are different from BetaMemory and their children
     // updates
     void left_activation(Token *t, WME w) override {
-        Token *new_token = new Token;
-        new_token->parent = t; new_token->wme = w;
+        Token *new_token = new Token(w, t);
+        // new_token->parent = t; new_token->wme = w;
         items.push_front(new_token);
         for (ReteNode *child : children) { child->left_activation(t); }
     }
@@ -264,7 +280,7 @@ void update_new_node_with_matches_from_above(ReteNode *newNode) {
         join->children = { newNode };
         for(WME item : join->amem->items) { join->right_activation(item); }
         join->children = savedListOfChildren;
-    }
+    } else { assert(false && "unknown parent type"); }
 
 }
 
@@ -286,6 +302,7 @@ BetaMemory *build_or_share_beta_memory_node(ReteNode *parent) {
 // pg 34
 JoinNode *build_or_share_join_node(ReteNode *parent, AlphaMemory *am,
         list<TestAtJoinNode> tests) {
+    assert(parent != nullptr);
     for (ReteNode *child : parent->children) {
         JoinNode *join = dynamic_cast<JoinNode*>(child);
         if (join && join->amem == am && join->tests == tests) return join;
@@ -309,11 +326,23 @@ enum FieldType {
 struct Field {
     FieldType type;
     string v;
+
+    static Field var(string name) {
+        Field f; f.type = FieldType::Var; f.v = name; return f;
+    }
+
+    static Field constant(string name) {
+        Field f; f.type = FieldType::Const; f.v = name; return f;
+    }
 };
 
 // inferred from discussion
 struct Condition {
     Field attrs[NumFields];
+
+    Condition(Field ident, Field attr, Field val ) {
+        attrs[0] = ident; attrs[1] = attr; attrs[2] = val;
+    }
 };
 
 // implicitly defined on pg 35
@@ -367,6 +396,7 @@ list<TestAtJoinNode> get_join_tests_from_condition(Condition c,
 // page 36
 ConstTestNode *build_or_share_constant_test_node(ConstTestNode *parent, 
         WMEFieldType f, string sym) {
+    assert(parent != nullptr);
     // look for pre-existing node
     for (ConstTestNode *child: parent->children) {
         if (child->field_to_test == f && child->field_must_equal == sym) {
@@ -474,6 +504,47 @@ ProductionNode *add_production(vector<Condition> lhs, string rhs, Rete &r) {
     return prod;
 }
 
+struct ReteDummyTopNode : public ReteNode {
+    void right_activation(WME w) { assert(false && "unimplement ReteDummyTopNode"); }
+    // activation from beat node
+    void left_activation(Token *t) { assert(false && "unimplement ReteDummyTopNode"); }
+    void left_activation(Token *t, WME w) { assert(false && "unimplement ReteDummyTopNode"); }
+};
+
 int main() {
+    // w1: (B1 ^on B2)
+    // w2: (B1 ^on B3)
+    // w3: (B1 ^color red)
+    // w4: (B2 ^on table)
+    WME w1("B1", "on", "B2");
+    WME w2("B1", "on", "B3");
+    WME w3("B1", "color", "red");
+    WME w4("B2", "on", "table");
+
+    Rete rete;
+    rete.alpha_top = ConstTestNode::dummy_top();
+    rete.dummy_top_node = new ReteDummyTopNode();
+    rete.working_memory.push_back(WME("B1", "on", "B2"));
+    rete.working_memory.push_back(WME("B1", "on", "B3"));
+    rete.working_memory.push_back(WME("B1", "color", "red"));
+    rete.working_memory.push_back(WME("B1", "on", "table"));
+    rete.working_memory.push_back(WME("B2", "left-of", "B3"));
+    rete.working_memory.push_back(WME("B2", "color", "blue"));
+    rete.working_memory.push_back(WME("B3", "left-of", "B4"));
+    rete.working_memory.push_back(WME("B3", "on", "table"));
+    rete.working_memory.push_back(WME("B3", "color", "red"));
+    rete.working_memory.push_back(WME("id", "attr", "val"));
+
+    add_production(std::vector<Condition>({Condition(Field::var("x"),
+                    Field::constant("on"), Field::var("y"))}),
+            "prod2", rete);
+
+    add_production(std::vector<Condition>(
+                {Condition(Field::var("x"), Field::constant("on"), Field::var("y")),
+                Condition(Field::var("y"), Field::constant("left-of"), Field::var("z")),
+                Condition(Field::var("z"), Field::constant("color"), Field::constant("red"))
+                }), "prod2", rete);
+
+    // ProductionNode *p = add_production()
     return 0;
 }
