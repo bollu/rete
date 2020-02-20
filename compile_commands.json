@@ -1,0 +1,7 @@
+[
+{
+  "directory": "/home/bollu/work/rete/build",
+  "command": "/usr/bin/c++     -fsanitize=address,undefined   -std=gnu++14 -o CMakeFiles/rete.dir/rete.cpp.o -c /home/bollu/work/rete/rete.cpp",
+  "file": "/home/bollu/work/rete/rete.cpp"
+}
+]
