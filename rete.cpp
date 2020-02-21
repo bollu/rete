@@ -3,8 +3,10 @@
 #include<vector>
 #include<list>
 #include<assert.h>
-#include <typeinfo>
+#include<typeinfo>
+#include<map>
 #include <graphviz/cgraph.h>
+#include<sstream>
 
 
 using namespace std;
@@ -139,7 +141,7 @@ struct AlphaMemory {
     list<ReteNode *> successors;
 };
 ostream &operator << (ostream &os, const AlphaMemory &am) {
-    os <<  "(α ";
+    os <<  "(alpha-memory:" << am.items.size() << " ";
     for (WME wme : am.items) os << wme << " ";
     os << ")";
     return os;
@@ -178,8 +180,7 @@ std::ostream & operator << (std::ostream &os, WMEFieldType field) {
 }
 
 std::ostream& operator << (std::ostream &os, const ConstTestNode &node) {
-    os << "(" << node.field_to_test << " =? " << node.field_must_equal 
-        << " | output_memory: " << node.output_memory << ")";
+    os << "(const-test " << node.field_to_test << " =? " << node.field_must_equal << ")";
     return os;
 }
 
@@ -237,6 +238,16 @@ struct BetaMemory : public ReteNode {
     }
 };
 
+ostream& operator <<(ostream &os, const BetaMemory &bm) {
+    os << "(beta-memory ";
+    for (Token *t: bm.items) {
+        assert(t != nullptr);
+        os << *t << " ";
+    }
+    os <<")";
+    return os;
+}
+
 // pg 24
 struct TestAtJoinNode {
     WMEFieldType field_of_arg1, field_of_arg2;
@@ -248,6 +259,15 @@ struct TestAtJoinNode {
             condition_number_of_arg2 == other.condition_number_of_arg2;
     }
 };
+
+ostream& operator << (ostream &os, const TestAtJoinNode &test) {
+    os << "(test-at-join";
+    os << test.field_of_arg1 << " ==  " << 
+        test.condition_number_of_arg2 << "[" << test.field_of_arg2  << "]";
+    os << ")";
+    return os;
+}
+
 
 /// pg 24
 struct JoinNode : public ReteNode {
@@ -302,17 +322,61 @@ struct JoinNode : public ReteNode {
     }
 };
 
+ostream& operator << (ostream &os, const JoinNode &join) {
+    os << "(join";
+    for (TestAtJoinNode test : join.tests) {
+        os << test;
+    }
+    os << ")";
+    return os;
+}
+
+// pg 37: inferred
+struct ProductionNode : public ReteNode {
+    string rhs;
+
+    // activation from alpha node
+    void right_activation(WME w)
+    { assert(false && "have not thought about it");
+    }
+    // activation from beat node
+    void left_activation(Token *t)
+    { 
+        cout << "(" << *t << " ~ " << rhs << ")";
+    }
+    void left_activation(Token *t, WME w)
+    { 
+        if (t) { cout << "(PROD " << *t << ": " << w << " ~ " << rhs << ")"; }
+        else { cout << "(PROD " << "0x0" << ": " << w << " ~ " << rhs << ")"; }
+    }
+        // assert(false && "have not thought about it"); }
+};
+
+
+ostream& operator << (ostream &os, const ProductionNode &production) {
+    os << "(production " << production.rhs << ")";
+    return os;
+}
+
 
 // no page; hold all global state
 struct Rete {
     ConstTestNode *alpha_top;
     ReteNode *beta_top;
 
+    // alphabetically ordered for ease of use
+    vector<AlphaMemory *> alphamemories;
+    vector<BetaMemory *> betamemories;
+    vector<ConstTestNode *> consttestnodes;
+    vector<JoinNode *> joinnodes;
+    vector<ProductionNode *> productions;
+
     // inferred from page 35: build_or_share_alpha memory:
     // { initialize am with any current WMEs }
     // presupposes knowledge of a collection of WMEs
     vector<WME> working_memory;
 };
+
 
 
 
@@ -346,6 +410,7 @@ bool const_test_node_activation(ConstTestNode *node, WME w) {
 
 // pg 14
 void addWME(Rete &r, WME w) {
+    r.working_memory.push_back(w);
     const_test_node_activation(r.alpha_top, w);
 }
 
@@ -372,12 +437,13 @@ void update_new_node_with_matches_from_above(ReteNode *newNode) {
 }
 
 // pg 34
-BetaMemory *build_or_share_beta_memory_node(ReteNode *parent) {
+BetaMemory *build_or_share_beta_memory_node(Rete &r, ReteNode *parent) {
     for (ReteNode *child : parent->children) {
         BetaMemory *beta = dynamic_cast<BetaMemory*>(child);
         if (beta) return beta;
     }
     BetaMemory *newbeta = new BetaMemory;
+    r.betamemories.push_back(newbeta);
     newbeta->parent = parent;
     printf("%s newBeta: %p | parent: %p\n", __FUNCTION__, newbeta, newbeta->parent);
     //newbeta->children = nullptr;
@@ -388,7 +454,7 @@ BetaMemory *build_or_share_beta_memory_node(ReteNode *parent) {
 }
 
 // pg 34
-JoinNode *build_or_share_join_node(ReteNode *parent, AlphaMemory *am,
+JoinNode *build_or_share_join_node(Rete &r, ReteNode *parent, AlphaMemory *am,
         list<TestAtJoinNode> tests) {
     assert(parent != nullptr);
     for (ReteNode *child : parent->children) {
@@ -397,6 +463,7 @@ JoinNode *build_or_share_join_node(ReteNode *parent, AlphaMemory *am,
     }
 
     JoinNode *newjoin = new JoinNode;
+    r.joinnodes.push_back(newjoin);
     newjoin->parent = parent; parent->children.push_front(newjoin);
     printf("%s newjoin: %p | parent: %p | parent type: %s\n", 
             __FUNCTION__, 
@@ -461,7 +528,7 @@ void lookup_earlier_cond_with_field(const vector<Condition> &earlierConds,
 
 // pg 35
 // pg 35: supposedly, nearness is not a _hard_ requiement.
-list<TestAtJoinNode> get_join_tests_from_condition(Condition c, 
+list<TestAtJoinNode> get_join_tests_from_condition(Rete &_, Condition c, 
         vector<Condition> earlierConds) {
     list<TestAtJoinNode> result;
 
@@ -484,7 +551,8 @@ list<TestAtJoinNode> get_join_tests_from_condition(Condition c,
 };
 
 // page 36
-ConstTestNode *build_or_share_constant_test_node(ConstTestNode *parent, 
+ConstTestNode *build_or_share_constant_test_node(Rete &r, 
+        ConstTestNode *parent, 
         WMEFieldType f, string sym) {
     assert(parent != nullptr);
     // look for pre-existing node
@@ -495,6 +563,7 @@ ConstTestNode *build_or_share_constant_test_node(ConstTestNode *parent,
     }
     // build a new node
     ConstTestNode *newnode = new ConstTestNode(f, sym, nullptr);;
+    r.consttestnodes.push_back(newnode);
     printf("%s newconsttestnode: %p\n", __FUNCTION__, newnode);
     parent->children.push_back(newnode);
     // newnode->field_to_test = f; newnode->field_must_equal = sym;
@@ -513,12 +582,12 @@ bool wme_passes_constant_tests(WME w, Condition c) {
 }
 
 // pg 35: dataflow version
-AlphaMemory *build_or_share_alpha_memory_dataflow(Condition c, Rete &r) {
+AlphaMemory *build_or_share_alpha_memory_dataflow(Rete &r, Condition c) {
     ConstTestNode *currentNode = r.alpha_top;
     for (int f = 0; f < (int)WMEFieldType::NumFields; ++f) {
         if (c.attrs[f].type != FieldType::Const) continue;
         const string sym = c.attrs[f].v;
-        currentNode = build_or_share_constant_test_node(currentNode, 
+        currentNode = build_or_share_constant_test_node(r, currentNode, 
                 (WMEFieldType)f, sym);
     }
 
@@ -527,6 +596,7 @@ AlphaMemory *build_or_share_alpha_memory_dataflow(Condition c, Rete &r) {
     }
     assert(currentNode->output_memory == nullptr);
     currentNode->output_memory = new AlphaMemory;
+    r.alphamemories.push_back(currentNode->output_memory);
     printf("%s currentNode->output_memory: %p\n", __FUNCTION__, currentNode->output_memory);
     // initialize AM with any current WMEs
     for (WME w: r.working_memory) {
@@ -544,29 +614,10 @@ AlphaMemory *build_or_share_alpha_memory_hashed(Condition c, Rete &r) {
 };
 
 
-struct ProductionNode : public ReteNode {
-    string rhs;
-
-    // activation from alpha node
-    void right_activation(WME w)
-    { assert(false && "have not thought about it");
-    }
-    // activation from beat node
-    void left_activation(Token *t)
-    { 
-        cout << "(" << *t << " ~ " << rhs << ")";
-    }
-    void left_activation(Token *t, WME w)
-    { 
-        if (t) { cout << "(PROD " << *t << ": " << w << " ~ " << rhs << ")"; }
-        else { cout << "(PROD " << "0x0" << ": " << w << " ~ " << rhs << ")"; }
-    }
-        // assert(false && "have not thought about it"); }
-};
 
 // pg 37
 // - inferred type of production node: 
-ProductionNode *add_production(vector<Condition> lhs, string rhs, Rete &r) {
+ProductionNode *add_production(Rete &r, vector<Condition> lhs, string rhs) {
     // pseudocode: pg 33
     // M[1] <- dummy-top-node
     // build/share J[1] (a child of M[1]), the join node for c[1]
@@ -580,22 +631,23 @@ ProductionNode *add_production(vector<Condition> lhs, string rhs, Rete &r) {
     ReteNode *currentNode = r.beta_top;
     vector<Condition> earlierConds;
 
-    list<TestAtJoinNode> tests = get_join_tests_from_condition(lhs[0], earlierConds);
-    AlphaMemory *am = build_or_share_alpha_memory_dataflow(lhs[0], r);
-    currentNode = build_or_share_join_node(currentNode, am, tests);
+    list<TestAtJoinNode> tests = get_join_tests_from_condition(r, lhs[0], earlierConds);
+    AlphaMemory *am = build_or_share_alpha_memory_dataflow(r, lhs[0]);
+    currentNode = build_or_share_join_node(r, currentNode, am, tests);
 
     for(int i = 1; i < lhs.size(); ++i) {
         // get the current beat memory node M[i]
-        currentNode = build_or_share_beta_memory_node(currentNode);
+        currentNode = build_or_share_beta_memory_node(r, currentNode);
         // get the join node J[i] for condition c[u[
         earlierConds.push_back(lhs[i-1]);
-        tests = get_join_tests_from_condition(lhs[i], earlierConds);
-        am = build_or_share_alpha_memory_dataflow(lhs[i], r);
-        currentNode = build_or_share_join_node(currentNode, am, tests);
+        tests = get_join_tests_from_condition(r, lhs[i], earlierConds);
+        am = build_or_share_alpha_memory_dataflow(r, lhs[i]);
+        currentNode = build_or_share_join_node(r, currentNode, am, tests);
     }
 
     // build a new production node, make it a child of current node
     ProductionNode *prod = new ProductionNode; 
+    r.productions.push_back(prod);
     prod->parent = currentNode;
     printf("%s prod: %p | parent: %p\n", __FUNCTION__, prod, prod->parent);
     prod->rhs = rhs;
@@ -603,6 +655,107 @@ ProductionNode *add_production(vector<Condition> lhs, string rhs, Rete &r) {
     // update new-node-with-matches-from-above (the new production node)
     update_new_node_with_matches_from_above(prod);
     return prod;
+}
+
+void printGraphViz(Rete &r, FILE *f) {
+    Agraph_t *g = agopen((char *)"G", Agdirected, nullptr);
+    agsafeset(g, (char *)"fontname", (char *)"monospace", (char *)"monospace");
+
+    map<void *, Agnode_t*> nodes;
+    stringstream ss;
+
+    {
+        // ss << *r.beta_top;
+        nodes[r.beta_top] = agnode(g, (char *) "beta-top", true);
+        agsafeset(nodes[r.beta_top], 
+                (char *)"fontname", (char *)"monospace", (char *)"monospace");
+        ss.str("");
+    }
+
+    for (int i = 0; i < r.working_memory.size(); ++i) {
+        ss << r.working_memory[i];
+        string s = ss.str();
+        nodes[&r.working_memory.front() + i] = agnode(g, (char *) s.c_str(), true);
+        ss.str("");
+    }
+
+
+    for (AlphaMemory *node: r.alphamemories) { 
+        ss << *node;
+        string s = ss.str();
+        nodes[node] = agnode(g, (char *)s.c_str(), true);
+        agsafeset(nodes[node], (char *)"fontname", (char *)"monospace", (char *)"monospace");
+        ss.str("");
+    }
+
+    for (BetaMemory *node: r.betamemories) { 
+        ss << *node;
+        string s = ss.str();
+        nodes[node] = agnode(g, (char *)s.c_str(), true);
+        agsafeset(nodes[node], (char *)"fontname", (char *)"monospace", (char *)"monospace");
+        ss.str("");
+    }
+
+
+    for (ConstTestNode *node: r.consttestnodes) { 
+        ss << *node;
+        string s = ss.str();
+        nodes[node] = agnode(g, (char *)s.c_str(), true);
+        agsafeset(nodes[node], (char *)"fontname", (char *)"monospace", (char *)"monospace");
+        ss.str("");
+    }
+
+    for (JoinNode *node: r.joinnodes) { 
+        ss << *node;
+        string s = ss.str();
+        nodes[node] = agnode(g, (char *)s.c_str(), true);
+        agsafeset(nodes[node], (char *)"fontname", (char *)"monospace", (char *)"monospace");
+        ss.str("");
+    }
+
+    for (ProductionNode *node: r.productions) { 
+        ss << *node;
+        string s = ss.str();
+        nodes[node] = agnode(g, (char *)s.c_str(), true);
+        agsafeset(nodes[node], (char *)"fontname", (char *)"monospace", (char *)"monospace");
+        ss.str("");
+    }
+
+    for (AlphaMemory *node : r.alphamemories) {
+        for (ReteNode *succ : node->successors) {
+            Agedge_t *e = agedge(g, nodes[node], nodes[succ], nullptr, 1);
+        }
+    }
+
+    for (ConstTestNode *node : r.consttestnodes) {
+        for(ConstTestNode *succ : node->children) {
+            Agedge_t *e = agedge(g, nodes[node], nodes[succ], nullptr, 1);
+        }
+        if (node->output_memory){
+            Agedge_t *e = agedge(g, nodes[node], nodes[node->output_memory], nullptr, 1);
+        }
+
+    }
+
+    for (JoinNode *node : r.joinnodes) {
+        for(ReteNode *succ : node->children) {
+            Agedge_t *e = agedge(g, nodes[node], nodes[succ], nullptr, 1);
+        }
+    }
+
+    for (ProductionNode *node : r.productions) {
+        for(ReteNode *succ : node->children) {
+            Agedge_t *e = agedge(g, nodes[node], nodes[succ], nullptr, 1);
+        }
+    }
+
+    for(ReteNode *succ : r.beta_top->children) {
+            Agedge_t *e = agedge(g, nodes[r.beta_top], nodes[succ], nullptr, 1);
+    }
+
+
+
+    agwrite(g, f);
 }
 
 // add simple WME to match a production with 1 element.
@@ -616,6 +769,7 @@ void test1() {
 
     Rete rete;
     rete.alpha_top = ConstTestNode::dummy_top();
+    rete.consttestnodes.push_back(rete.alpha_top);
     rete.beta_top = new ReteDummyTopNode();
     printf("beta_top: %p\n", rete.beta_top);
 
@@ -630,22 +784,24 @@ void test1() {
     
     cout << "adding production\n";
 
-    add_production(std::vector<Condition>({Condition(Field::var("x"),
+    add_production(rete,
+            std::vector<Condition>({Condition(Field::var("x"),
                     Field::constant("on"), Field::var("y"))}),
-            "prod1", rete);
+            "prod1");
 
     cout << "added production\n";
 
     addWME(rete, WME("B1", "on", "B2"));
     addWME(rete, WME("B1", "on", "B3"));
+
+    cout << "---\n";
+    FILE *f = fopen("test1.dot", "w");
+    printGraphViz(rete, f);
+    fclose(f);
     cout << "====\n";
 }
 
 
-void printGraphViz(Rete r, FILE *f) {
-    Agraph_t *g = agopen((char *)"G", Agdirected, nullptr);
-    agwrite(g, f);
-}
 
 // add simple WME to match a production with 1 element.
 // First add WME, then add production
@@ -658,15 +814,17 @@ void test2() {
 
     Rete rete;
     rete.alpha_top = ConstTestNode::dummy_top();
+    rete.consttestnodes.push_back(rete.alpha_top);
     rete.beta_top = new ReteDummyTopNode();
 
 
     addWME(rete, WME("B1", "on", "B2"));
     addWME(rete, WME("B1", "on", "B3"));
 
-    add_production(std::vector<Condition>({Condition(Field::var("x"),
+    add_production(rete, 
+              std::vector<Condition>({Condition(Field::var("x"),
                     Field::constant("on"), Field::var("y"))}),
-            "prod1", rete);
+            "prod1");
 
     cout << "---\n";
     FILE *f = fopen("test2.dot", "w");
