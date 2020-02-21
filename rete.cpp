@@ -4,6 +4,8 @@
 #include<list>
 #include<assert.h>
 #include <typeinfo>
+#include <graphviz/cgraph.h>
+
 
 using namespace std;
 
@@ -266,8 +268,9 @@ struct JoinNode : public ReteNode {
             }
         }
         else if (ReteDummyTopNode *dummy = dynamic_cast<ReteDummyTopNode *>(parent)) {
-            assert(false && "what do I do here?");
+            // assert(false && "what do I do here?");
             // this is okay
+            for(ReteNode *child: children) child->left_activation(nullptr, w);
         }
         else {
             assert(false && "unknown parent for joinnode");
@@ -353,6 +356,7 @@ void update_new_node_with_matches_from_above(ReteNode *newNode) {
     assert(parent != nullptr);
 
     if (BetaMemory *bm = dynamic_cast<BetaMemory *>(parent)) {
+        assert(false && "parent is β");
         for (Token *t: bm->items) {
             newNode->left_activation(t);
         }
@@ -545,12 +549,19 @@ struct ProductionNode : public ReteNode {
 
     // activation from alpha node
     void right_activation(WME w)
-    { assert(false && "have not thought about it"); }
+    { assert(false && "have not thought about it");
+    }
     // activation from beat node
     void left_activation(Token *t)
-    { assert(false && "have not thought about it"); }
+    { 
+        cout << "(" << *t << " ~ " << rhs << ")";
+    }
     void left_activation(Token *t, WME w)
-    { assert(false && "have not thought about it"); }
+    { 
+        if (t) { cout << "(PROD " << *t << ": " << w << " ~ " << rhs << ")"; }
+        else { cout << "(PROD " << "0x0" << ": " << w << " ~ " << rhs << ")"; }
+    }
+        // assert(false && "have not thought about it"); }
 };
 
 // pg 37
@@ -594,11 +605,10 @@ ProductionNode *add_production(vector<Condition> lhs, string rhs, Rete &r) {
     return prod;
 }
 
-int main() {
-    // w1: (B1 ^on B2)
-    // w2: (B1 ^on B3)
-    // w3: (B1 ^color red)
-    // w4: (B2 ^on table)
+// add simple WME to match a production with 1 element.
+// First add production, then add WME
+void test1() {
+    cout << "====test1:====\n";
     WME w1("B1", "on", "B2");
     WME w2("B1", "on", "B3");
     WME w3("B1", "color", "red");
@@ -622,21 +632,53 @@ int main() {
 
     add_production(std::vector<Condition>({Condition(Field::var("x"),
                     Field::constant("on"), Field::var("y"))}),
-            "prod2", rete);
+            "prod1", rete);
 
     cout << "added production\n";
 
     addWME(rete, WME("B1", "on", "B2"));
-    // addWME(rete, WME("B1", "on", "B3"));
+    addWME(rete, WME("B1", "on", "B3"));
+    cout << "====\n";
+}
 
-    /*
-    add_production(std::vector<Condition>(
-                {Condition(Field::var("x"), Field::constant("on"), Field::var("y")),
-                Condition(Field::var("y"), Field::constant("left-of"), Field::var("z")),
-                Condition(Field::var("z"), Field::constant("color"), Field::constant("red"))
-                }), "prod2", rete);
-    */
 
-    // ProductionNode *p = add_production()
+void printGraphViz(Rete r, FILE *f) {
+    Agraph_t *g = agopen((char *)"G", Agdirected, nullptr);
+    agwrite(g, f);
+}
+
+// add simple WME to match a production with 1 element.
+// First add WME, then add production
+void test2() {
+    cout << "====test1:====\n";
+    WME w1("B1", "on", "B2");
+    WME w2("B1", "on", "B3");
+    WME w3("B1", "color", "red");
+    WME w4("B2", "on", "table");
+
+    Rete rete;
+    rete.alpha_top = ConstTestNode::dummy_top();
+    rete.beta_top = new ReteDummyTopNode();
+
+
+    addWME(rete, WME("B1", "on", "B2"));
+    addWME(rete, WME("B1", "on", "B3"));
+
+    add_production(std::vector<Condition>({Condition(Field::var("x"),
+                    Field::constant("on"), Field::var("y"))}),
+            "prod1", rete);
+
+    cout << "---\n";
+    FILE *f = fopen("test2.dot", "w");
+    printGraphViz(rete, f);
+    fclose(f);
+
+    cout << "====\n";
+
+}
+
+int main() {
+    test1();
+    test2();
     return 0;
 }
