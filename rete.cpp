@@ -459,10 +459,12 @@ BetaMemory *build_or_share_beta_memory_node(Rete &r, ReteNode *parent) {
 JoinNode *build_or_share_join_node(Rete &r, ReteNode *parent, AlphaMemory *am,
         list<TestAtJoinNode> tests) {
     assert(parent != nullptr);
+    /* HACK: disable reuse
     for (ReteNode *child : parent->children) {
         JoinNode *join = dynamic_cast<JoinNode*>(child);
         if (join && join->amem == am && join->tests == tests) return join;
     }
+    */
 
     JoinNode *newjoin = new JoinNode;
     r.joinnodes.push_back(newjoin);
@@ -472,7 +474,6 @@ JoinNode *build_or_share_join_node(Rete &r, ReteNode *parent, AlphaMemory *am,
             newjoin, 
             newjoin->parent, 
             typeid(*newjoin->parent).name());
-    //newjoin->children = nullptr
     newjoin->tests = tests; newjoin->amem = am;
     am->successors.push_front(newjoin);
     return newjoin;
@@ -657,6 +658,10 @@ ProductionNode *add_production(Rete &r, vector<Condition> lhs, string rhs) {
     update_new_node_with_matches_from_above(prod);
     return prod;
 }
+
+// =========================
+// END RETE, START EXAMPLES
+// =========================
 
 void printGraphViz(Rete &r, FILE *f) {
     Agraph_t *g = agopen((char *)"G", Agdirected, nullptr);
@@ -1032,11 +1037,11 @@ void test_from_paper() {
 }
 
 int main() {
-    test1();
-    test2();
-    test3();
-    test4();
+    // test1();
+    // test2();
+    // test3();
+    // test4();
     test5();
-    test_from_paper();
+    // test_from_paper();
     return 0;
 }
