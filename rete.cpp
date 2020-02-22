@@ -346,8 +346,8 @@ struct ProductionNode : public ReteNode {
     }
     void left_activation(Token *t, WME w)
     { 
-        if (t) { cout << "(PROD " << *t << ": " << w << " ~ " << rhs << ")"; }
-        else { cout << "(PROD " << "0x0" << ": " << w << " ~ " << rhs << ")"; }
+        if (t) { cout << "## (PROD " << *t << ": " << w << " ~ " << rhs << ") ##\n"; }
+        else { cout << "## (PROD " << "0x0" << ": " << w << " ~ " << rhs << ") ##\n"; }
     }
         // assert(false && "have not thought about it"); }
 };
@@ -672,12 +672,14 @@ void printGraphViz(Rete &r, FILE *f) {
         ss.str("");
     }
 
+    /*
     for (int i = 0; i < r.working_memory.size(); ++i) {
         ss << r.working_memory[i];
         string s = ss.str();
         nodes[&r.working_memory.front() + i] = agnode(g, (char *) s.c_str(), true);
         ss.str("");
     }
+    */
 
 
     for (AlphaMemory *node: r.alphamemories) { 
@@ -806,7 +808,7 @@ void test1() {
 // add simple WME to match a production with 1 element.
 // First add WME, then add production
 void test2() {
-    cout << "====test1:====\n";
+    cout << "====test2:====\n";
     WME w1("B1", "on", "B2");
     WME w2("B1", "on", "B3");
     WME w3("B1", "color", "red");
