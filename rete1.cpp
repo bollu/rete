@@ -700,6 +700,22 @@ void graphAlphaNet(Rete &r, Agraph_t *g, int &uid) {
         }
     }
 
+    // print WMEs in one block
+    {
+      const string uidstr = std::to_string(uid++);
+      vector<string> data;
+      for (WME *wme : r.working_memory) {
+        ss.str(""); ss << *wme; data.push_back(ss.str());
+      }
+      const string s = table1d_to_html("WMEs", data);
+      Agnode_t *n = agnode(galpha, (char *) uidstr.c_str(), true);
+      agsafeset(n, (char *)"fontname", (char *)"monospace", (char *)"");
+      agsafeset(n, (char *)"shape", (char *)"none", (char *)"");
+      const char *l = agstrdup_html(galpha, (char *)s.c_str());
+      agsafeset(n, (char *)"label", (char *)l, (char *)"");
+      Agedge_t *e = agedge(g, n, nodes[r.alpha_top], nullptr, 1);
+    }
+
 }
 
 
