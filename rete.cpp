@@ -674,31 +674,38 @@ ProductionNode *add_production(Rete &r, vector<Condition> lhs, string rhs) {
 // =========================
 // END RETE, START EXAMPLES
 // =========================
-
-void printGraphViz(Rete &r, FILE *dotf, FILE *pngf, bool link_tokens=false) {
-    GVC_t *gvc = gvContext();
-    Agraph_t *g = agopen((char *)"G", Agdirected, nullptr);
-    agsafeset(g, (char *)"fontname", (char *)"monospace", (char *)"");
-    agsafeset(g, (char *)"rankdir", (char *)"RL", (char *)"");
-    Agraph_t *alphag = agsubg(g, (char *)"cluster-alpha-network", 1);
-    agsafeset(alphag, (char *)"rankdir", (char *)"RL", (char *)"");
-
-    Agraph_t *betag = agsubg(g, (char *)"cluster-beta-network-inner", 1);
-    agsafeset(betag, (char *)"rankdir", (char *)"TB", (char *)"");
-    Agraph_t *gwme = agsubg(g, (char *)"cluster-wme", 1);
+void printAlpha(Rete &r, Agraph_t *g, int &uid) {
+    Agraph_t *galpha = agsubg(g, (char *)"cluster-alpha-network", 1);
+    Agraph_t *gwme = agsubg(galpha, (char *)"cluster-wme", 1);
+    agsafeset(gwme, (char*)"style", (char*)"invis", (char*)"");
 
     map<const void *, Agnode_t*> nodes;
     stringstream ss;
 
-    int uid = 0;
-    {
+
+    for (int i = 0; i < r.alphamemories.size(); ++i) {
         const string uidstr = std::to_string(uid++);
-        // ss << *r.beta_top;
-        nodes[r.beta_top] = agnode(betag, (char *) uidstr.c_str(), true);
-        agsafeset(nodes[r.beta_top], 
-                (char *)"fontname", (char*)"monospace", (char *)"");
-        agsafeset(nodes[r.beta_top], (char *)"shape", (char *)"box", (char *)"");
-        agsafeset(nodes[r.beta_top], (char*)"label", (char*)"beta-top", (char*)"");
+        const AlphaMemory *node = r.alphamemories[i];
+        ss << "(α-mem-" << i  << ")";
+        string s = ss.str();
+        nodes[node] = agnode(galpha, (char *) uidstr.c_str(), true);
+        agsafeset(nodes[node], (char *)"fontname", (char *)"monospace", (char *)"");
+        agsafeset(nodes[node], (char *)"shape", (char *)"box", (char *)"");
+        agsafeset(nodes[node], (char*)"label", (char*)s.c_str(), (char*)"");
+        ss.str("");
+    }
+
+
+    for (int i = 0; i < r.consttestnodes.size(); ++i) {
+        const string uidstr = std::to_string(uid++);
+        const ConstTestNode *node = r.consttestnodes[i];
+        ss << "(" << 
+          node->field_to_test << " =? " << node->field_must_equal << ")";
+        const string s = ss.str();
+        nodes[node] = agnode(galpha, (char *) uidstr.c_str(), true);
+        agsafeset(nodes[node], (char *)"fontname", (char *)"monospace", (char *)"");
+        agsafeset(nodes[node], (char *)"shape", (char *)"box", (char *)"");
+        agsafeset(nodes[node], (char*)"label", (char*)s.c_str(), (char*)"");
         ss.str("");
     }
 
@@ -713,16 +720,50 @@ void printGraphViz(Rete &r, FILE *dotf, FILE *pngf, bool link_tokens=false) {
         ss.str("");
     }
 
+    for (AlphaMemory *node : r.alphamemories) {
+        for (ReteNode *succ : node->successors) {
+          auto it = nodes.find(succ);
+          if (it == nodes.end()) continue;
+          Agedge_t *e = agedge(g, nodes[node], nodes[succ], nullptr, 1);
+        }
 
-    for (int i = 0; i < r.alphamemories.size(); ++i) {
+        for (WME * wme : node->items) {
+            Agedge_t *e = agedge(g, nodes[node], nodes[wme], nullptr, 1);
+            agsafeset(e, (char*)"arrowhead", (char*)"none", (char*)"");
+            agsafeset(e, (char*)"penwidth", (char*)"3", (char*)"");
+
+        }
+    }
+
+    for (ConstTestNode *node : r.consttestnodes) {
+        for(ConstTestNode *succ : node->children) {
+            Agedge_t *e = agedge(g, nodes[node], nodes[succ], nullptr, 1);
+        }
+        if (node->output_memory){
+            Agedge_t *e = agedge(g, nodes[node], nodes[node->output_memory], nullptr, 1);
+        }
+
+    }
+
+}
+
+void printBeta(Rete &r, Agraph_t *g, int &uid) {
+  // create a new copy of the alpha memory nodes.
+  Agraph_t *gbeta = agsubg(g, (char *)"cluster-beta-network", 1);
+  Agraph_t *gprod = agsubg(gbeta, (char *)"cluster-production", 1);
+  agsafeset(gprod, (char*)"style", (char*)"invis", (char*)"");
+
+  map<const void *, Agnode_t*> nodes;
+  stringstream ss;
+
+    {
         const string uidstr = std::to_string(uid++);
-        const AlphaMemory *node = r.alphamemories[i];
-        ss << "(α-mem-" << i  << ")";
-        string s = ss.str();
-        nodes[node] = agnode(alphag, (char *) uidstr.c_str(), true);
-        agsafeset(nodes[node], (char *)"fontname", (char *)"monospace", (char *)"");
-        agsafeset(nodes[node], (char *)"shape", (char *)"box", (char *)"");
-        agsafeset(nodes[node], (char*)"label", (char*)s.c_str(), (char*)"");
+        // ss << *r.beta_top;
+        nodes[r.beta_top] = agnode(gbeta, (char *) uidstr.c_str(), true);
+        agsafeset(nodes[r.beta_top], 
+                (char *)"fontname", (char*)"monospace", (char *)"");
+        agsafeset(nodes[r.beta_top], (char *)"shape", (char *)"box", (char *)"");
+        agsafeset(nodes[r.beta_top], (char*)"label", (char*)"beta-top", (char*)"");
         ss.str("");
     }
 
@@ -731,21 +772,7 @@ void printGraphViz(Rete &r, FILE *dotf, FILE *pngf, bool link_tokens=false) {
         const BetaMemory *node = r.betamemories[i];
         ss << "(β-mem-" << i << ")";
         string s = ss.str();
-        nodes[node] = agnode(betag, (char *) uidstr.c_str(), true);
-        agsafeset(nodes[node], (char *)"fontname", (char *)"monospace", (char *)"");
-        agsafeset(nodes[node], (char *)"shape", (char *)"box", (char *)"");
-        agsafeset(nodes[node], (char*)"label", (char*)s.c_str(), (char*)"");
-        ss.str("");
-    }
-
-
-    for (int i = 0; i < r.consttestnodes.size(); ++i) {
-        const string uidstr = std::to_string(uid++);
-        const ConstTestNode *node = r.consttestnodes[i];
-        ss << "(" << 
-          node->field_to_test << " =? " << node->field_must_equal << ")";
-        const string s = ss.str();
-        nodes[node] = agnode(alphag, (char *) uidstr.c_str(), true);
+        nodes[node] = agnode(gbeta, (char *) uidstr.c_str(), true);
         agsafeset(nodes[node], (char *)"fontname", (char *)"monospace", (char *)"");
         agsafeset(nodes[node], (char *)"shape", (char *)"box", (char *)"");
         agsafeset(nodes[node], (char*)"label", (char*)s.c_str(), (char*)"");
@@ -765,19 +792,32 @@ void printGraphViz(Rete &r, FILE *dotf, FILE *pngf, bool link_tokens=false) {
         }
         ss << ")";
         const string s = ss.str();
-        nodes[node] = agnode(betag, (char *)uidstr.c_str(), true);
+        nodes[node] = agnode(gbeta, (char *)uidstr.c_str(), true);
         agsafeset(nodes[node], (char *)"fontname", (char *)"monospace", (char *)"");
         agsafeset(nodes[node], (char *)"shape", (char *)"box", (char *)"");
         agsafeset(nodes[node], (char *)"label", (char *)s.c_str(), (char *)"");
-        agsafeset(nodes[node], (char*)"label", (char*)s.c_str(), (char*)"");
         ss.str("");
     }
+
 
     for (ProductionNode *node: r.productions) { 
         const string uidstr = std::to_string(uid++);
         ss << *node;
         const string s = ss.str();
-        nodes[node] = agnode(g, (char *) uidstr.c_str(), true);
+        nodes[node] = agnode(gprod, (char *) uidstr.c_str(), true);
+        agsafeset(nodes[node], (char *)"fontname", (char *)"monospace", (char *)"");
+        agsafeset(nodes[node], (char *)"shape", (char *)"box", (char *)"");
+        agsafeset(nodes[node], (char*)"label", (char*)s.c_str(), (char*)"");
+        ss.str("");
+    }
+
+    // A copy of alpha-memory for the beta network
+    for (int i = 0; i < r.alphamemories.size(); ++i) {
+        const string uidstr = std::to_string(uid++);
+        const AlphaMemory *node = r.alphamemories[i];
+        ss << "(α-mem-" << i  << ")";
+        string s = ss.str();
+        nodes[node] = agnode(gbeta, (char *) uidstr.c_str(), true);
         agsafeset(nodes[node], (char *)"fontname", (char *)"monospace", (char *)"");
         agsafeset(nodes[node], (char *)"shape", (char *)"box", (char *)"");
         agsafeset(nodes[node], (char*)"label", (char*)s.c_str(), (char*)"");
@@ -785,38 +825,15 @@ void printGraphViz(Rete &r, FILE *dotf, FILE *pngf, bool link_tokens=false) {
     }
 
 
-    for (AlphaMemory *node : r.alphamemories) {
-        for (ReteNode *succ : node->successors) {
-            Agedge_t *e = agedge(g, nodes[node], nodes[succ], nullptr, 1);
-        }
-
-        for (WME * wme : node->items) {
-            Agedge_t *e = agedge(g, nodes[wme], nodes[node], nullptr, 1);
-        }
+    // top node
+    for(ReteNode *succ : r.beta_top->children) {
+            Agedge_t *e = agedge(g, nodes[r.beta_top], nodes[succ], nullptr, 1);
     }
 
     // need to print tokens? :( 
     for (BetaMemory *node : r.betamemories) {
         for (ReteNode *succ : node->children) {
             Agedge_t *e = agedge(g, nodes[node], nodes[succ], nullptr, 1);
-        }
-
-        // good way to link tokens?
-        if (link_tokens) {
-          for (Token *t : node->items) {
-            for(Token *cur = t; cur != nullptr; cur = cur->parent) {
-              Agedge_t *e = agedge(g, nodes[cur->wme], nodes[node], nullptr, 1);
-            }
-          }
-        }
-    }
-
-    for (ConstTestNode *node : r.consttestnodes) {
-        for(ConstTestNode *succ : node->children) {
-            Agedge_t *e = agedge(g, nodes[node], nodes[succ], nullptr, 1);
-        }
-        if (node->output_memory){
-            Agedge_t *e = agedge(g, nodes[node], nodes[node->output_memory], nullptr, 1);
         }
 
     }
@@ -831,20 +848,199 @@ void printGraphViz(Rete &r, FILE *dotf, FILE *pngf, bool link_tokens=false) {
         for(ReteNode *succ : node->children) {
             Agedge_t *e = agedge(g, nodes[node], nodes[succ], nullptr, 1);
         }
+    }
 
-        // good way to link tokens?
-        if (link_tokens) {
-          for (Token *t : node->items) {
-            for(Token *cur = t; cur != nullptr; cur = cur->parent) {
-              Agedge_t *e = agedge(g, nodes[cur->wme], nodes[node], nullptr, 1);
-            }
-          }
+    for (AlphaMemory *node : r.alphamemories) {
+        for (ReteNode *succ : node->successors) {
+          auto it = nodes.find(succ);
+          if (it == nodes.end()) continue;
+          Agedge_t *e = agedge(g, nodes[node], nodes[succ], nullptr, 1);
         }
     }
 
-    for(ReteNode *succ : r.beta_top->children) {
-            Agedge_t *e = agedge(g, nodes[r.beta_top], nodes[succ], nullptr, 1);
-    }
+
+}
+
+void printGraphViz(Rete &r, FILE *dotf, FILE *pngf, bool link_tokens=false) {
+    GVC_t *gvc = gvContext();
+    Agraph_t *g = agopen((char *)"G", Agdirected, nullptr);
+    agsafeset(g, (char *)"fontname", (char *)"monospace", (char *)"");
+    // agsafeset(g, (char *)"rankdir", (char *)"RL", (char *)"");
+
+    agsafeset(g, (char *)"concentrate", (char *)"true", (char *)"");
+
+    int uid = 0;
+    printAlpha(r, g, uid);
+    printBeta(r, g, uid);
+
+
+
+    // agsafeset(g, (char *)"fontname", (char *)"monospace", (char *)"");
+    // agsafeset(g, (char *)"rankdir", (char *)"RL", (char *)"");
+    // Agraph_t *alphag = agsubg(g, (char *)"cluster-alpha-network", 1);
+    // agsafeset(alphag, (char *)"rankdir", (char *)"RL", (char *)"");
+
+    // Agraph_t *betag = agsubg(g, (char *)"cluster-beta-network-inner", 1);
+    // agsafeset(betag, (char *)"rankdir", (char *)"TB", (char *)"");
+    // Agraph_t *gwme = agsubg(g, (char *)"cluster-wme", 1);
+
+    // map<const void *, Agnode_t*> nodes;
+    // stringstream ss;
+
+    // int uid = 0;
+    // {
+    //     const string uidstr = std::to_string(uid++);
+    //     // ss << *r.beta_top;
+    //     nodes[r.beta_top] = agnode(betag, (char *) uidstr.c_str(), true);
+    //     agsafeset(nodes[r.beta_top], 
+    //             (char *)"fontname", (char*)"monospace", (char *)"");
+    //     agsafeset(nodes[r.beta_top], (char *)"shape", (char *)"box", (char *)"");
+    //     agsafeset(nodes[r.beta_top], (char*)"label", (char*)"beta-top", (char*)"");
+    //     ss.str("");
+    // }
+
+    // for (WME *node: r.working_memory) {
+    //     const string uidstr = std::to_string(uid++);
+    //     ss << *node;
+    //     const string s = ss.str();
+    //     nodes[node] = agnode(gwme, (char *) uidstr.c_str(), true);
+    //     agsafeset(nodes[node], (char *)"fontname", (char *)"monospace", (char *)"");
+    //     agsafeset(nodes[node], (char *)"shape", (char *)"box", (char *)"");
+    //     agsafeset(nodes[node], (char*)"label", (char*)s.c_str(), (char*)"");
+    //     ss.str("");
+    // }
+
+
+    // for (int i = 0; i < r.alphamemories.size(); ++i) {
+    //     const string uidstr = std::to_string(uid++);
+    //     const AlphaMemory *node = r.alphamemories[i];
+    //     ss << "(α-mem-" << i  << ")";
+    //     string s = ss.str();
+    //     nodes[node] = agnode(alphag, (char *) uidstr.c_str(), true);
+    //     agsafeset(nodes[node], (char *)"fontname", (char *)"monospace", (char *)"");
+    //     agsafeset(nodes[node], (char *)"shape", (char *)"box", (char *)"");
+    //     agsafeset(nodes[node], (char*)"label", (char*)s.c_str(), (char*)"");
+    //     ss.str("");
+    // }
+
+    // for (int i =0; i < r.betamemories.size(); ++i) {
+    //     const string uidstr = std::to_string(uid++);
+    //     const BetaMemory *node = r.betamemories[i];
+    //     ss << "(β-mem-" << i << ")";
+    //     string s = ss.str();
+    //     nodes[node] = agnode(betag, (char *) uidstr.c_str(), true);
+    //     agsafeset(nodes[node], (char *)"fontname", (char *)"monospace", (char *)"");
+    //     agsafeset(nodes[node], (char *)"shape", (char *)"box", (char *)"");
+    //     agsafeset(nodes[node], (char*)"label", (char*)s.c_str(), (char*)"");
+    //     ss.str("");
+    // }
+
+
+    // for (int i = 0; i < r.consttestnodes.size(); ++i) {
+    //     const string uidstr = std::to_string(uid++);
+    //     const ConstTestNode *node = r.consttestnodes[i];
+    //     ss << "(" << 
+    //       node->field_to_test << " =? " << node->field_must_equal << ")";
+    //     const string s = ss.str();
+    //     nodes[node] = agnode(alphag, (char *) uidstr.c_str(), true);
+    //     agsafeset(nodes[node], (char *)"fontname", (char *)"monospace", (char *)"");
+    //     agsafeset(nodes[node], (char *)"shape", (char *)"box", (char *)"");
+    //     agsafeset(nodes[node], (char*)"label", (char*)s.c_str(), (char*)"");
+    //     ss.str("");
+    // }
+
+    // for (int i = 0; i < r.joinnodes.size(); ++i) {
+    //     const JoinNode *node = r.joinnodes[i];
+    //     const string uidstr = std::to_string(uid++);
+    //     ss << "(join-" << i << "; ";
+    //     for (TestAtJoinNode test : node->tests) { 
+    //       ss 
+    //         << test.field_of_arg1 
+    //         << " =? " 
+    //         << test.condition_number_of_arg2 << "[" << test.field_of_arg2  << "]" 
+    //         << "; ";
+    //     }
+    //     ss << ")";
+    //     const string s = ss.str();
+    //     nodes[node] = agnode(betag, (char *)uidstr.c_str(), true);
+    //     agsafeset(nodes[node], (char *)"fontname", (char *)"monospace", (char *)"");
+    //     agsafeset(nodes[node], (char *)"shape", (char *)"box", (char *)"");
+    //     agsafeset(nodes[node], (char *)"label", (char *)s.c_str(), (char *)"");
+    //     ss.str("");
+    // }
+
+    // for (ProductionNode *node: r.productions) { 
+    //     const string uidstr = std::to_string(uid++);
+    //     ss << *node;
+    //     const string s = ss.str();
+    //     nodes[node] = agnode(g, (char *) uidstr.c_str(), true);
+    //     agsafeset(nodes[node], (char *)"fontname", (char *)"monospace", (char *)"");
+    //     agsafeset(nodes[node], (char *)"shape", (char *)"box", (char *)"");
+    //     agsafeset(nodes[node], (char*)"label", (char*)s.c_str(), (char*)"");
+    //     ss.str("");
+    // }
+
+
+    // for (AlphaMemory *node : r.alphamemories) {
+    //     for (ReteNode *succ : node->successors) {
+    //         Agedge_t *e = agedge(g, nodes[node], nodes[succ], nullptr, 1);
+    //     }
+
+    //     for (WME * wme : node->items) {
+    //         Agedge_t *e = agedge(g, nodes[wme], nodes[node], nullptr, 1);
+    //     }
+    // }
+
+    // // need to print tokens? :( 
+    // for (BetaMemory *node : r.betamemories) {
+    //     for (ReteNode *succ : node->children) {
+    //         Agedge_t *e = agedge(g, nodes[node], nodes[succ], nullptr, 1);
+    //     }
+
+    //     // good way to link tokens?
+    //     if (link_tokens) {
+    //       for (Token *t : node->items) {
+    //         for(Token *cur = t; cur != nullptr; cur = cur->parent) {
+    //           Agedge_t *e = agedge(g, nodes[cur->wme], nodes[node], nullptr, 1);
+    //         }
+    //       }
+    //     }
+    // }
+
+    // for (ConstTestNode *node : r.consttestnodes) {
+    //     for(ConstTestNode *succ : node->children) {
+    //         Agedge_t *e = agedge(g, nodes[node], nodes[succ], nullptr, 1);
+    //     }
+    //     if (node->output_memory){
+    //         Agedge_t *e = agedge(g, nodes[node], nodes[node->output_memory], nullptr, 1);
+    //     }
+
+    // }
+
+    // for (JoinNode *node : r.joinnodes) {
+    //     for(ReteNode *succ : node->children) {
+    //         Agedge_t *e = agedge(g, nodes[node], nodes[succ], nullptr, 1);
+    //     }
+    // }
+
+    // for (ProductionNode *node : r.productions) {
+    //     for(ReteNode *succ : node->children) {
+    //         Agedge_t *e = agedge(g, nodes[node], nodes[succ], nullptr, 1);
+    //     }
+
+    //     // good way to link tokens?
+    //     if (link_tokens) {
+    //       for (Token *t : node->items) {
+    //         for(Token *cur = t; cur != nullptr; cur = cur->parent) {
+    //           Agedge_t *e = agedge(g, nodes[cur->wme], nodes[node], nullptr, 1);
+    //         }
+    //       }
+    //     }
+    // }
+
+    // for(ReteNode *succ : r.beta_top->children) {
+    //         Agedge_t *e = agedge(g, nodes[r.beta_top], nodes[succ], nullptr, 1);
+    // }
 
 
 
