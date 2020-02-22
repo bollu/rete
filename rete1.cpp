@@ -119,23 +119,10 @@ std::ostream& operator << (std::ostream &os, WME w) {
     return os;
 }
 
-// pg 22
-struct ReteNode {
-    list<ReteNode*> children;
-    ReteNode *parent;
-    ReteNode() { parent = nullptr; }
-    // activation from alpha node
-    virtual void right_activation(WME *w) = 0;
-    // activation from beat node
-    virtual void left_activation(Token *t) = 0;
-    virtual void left_activation(Token *t, WME *w) = 0;
-};
-
-
 // pg 21
 struct AlphaMemory {
-    list<WME*> items;
-    list<JoinNode *> successors;
+    list<WME*> items; // every pointer must be valid
+    list<JoinNode *> successors; // every pointer must be valid.
 };
 
 ostream &operator << (ostream &os, const AlphaMemory &am) {
@@ -223,13 +210,13 @@ ostream &operator << (ostream &os, const Token &t) {
 
 // pg 22
 struct BetaMemory { 
-    JoinNode *parent;
+    JoinNode *parent; // invariant: must be valid.
     list<Token*> items;
     vector<JoinNode *> children;
 
     // pg 23: dodgy! the types are different from BetaMemory and their children
     // updates
-    virtual void left_activation(Token *t, WME *w);
+    virtual void join_activation(Token *t, WME *w);
 };
 
 ostream& operator <<(ostream &os, const BetaMemory &bm) {
@@ -245,19 +232,19 @@ ostream& operator <<(ostream &os, const BetaMemory &bm) {
 // pg 24
 struct TestAtJoinNode {
     WMEFieldType field_of_arg1, field_of_arg2;
-    int condition_number_of_arg2;
+    int ix_in_token_of_arg2;
 
     bool operator == (const TestAtJoinNode &other) const {
         return field_of_arg1 == other.field_of_arg1 &&
             field_of_arg2 == other.field_of_arg2 &&
-            condition_number_of_arg2 == other.condition_number_of_arg2;
+            ix_in_token_of_arg2 == other.ix_in_token_of_arg2;
     }
 };
 
 ostream& operator << (ostream &os, const TestAtJoinNode &test) {
     os << "(test-at-join ";
     os << test.field_of_arg1 << " ==  " << 
-        test.condition_number_of_arg2 << "[" << test.field_of_arg2  << "]";
+        test.ix_in_token_of_arg2 << "[" << test.field_of_arg2  << "]";
     os << ")";
     return os;
 }
@@ -265,8 +252,8 @@ ostream& operator << (ostream &os, const TestAtJoinNode &test) {
 
 /// pg 24
 struct JoinNode {
-  AlphaMemory *amem_src;
-  BetaMemory *bmem_src;
+  AlphaMemory *amem_src; // invariant: must be valid
+  BetaMemory *bmem_src; // can be nullptr
 
   vector<BetaMemory *> children;
   vector<TestAtJoinNode> tests;
@@ -274,23 +261,24 @@ struct JoinNode {
   JoinNode() : amem_src(nullptr), bmem_src(nullptr) {};
 
    // pg 24
-   void right_activation(WME *w) {
+   void alpha_activation(WME *w) {
+     assert(amem_src);
        if (bmem_src) {
          for (Token *t : bmem_src->items) {
            if (!this->perform_join_tests(t, w)) continue;
-           for(BetaMemory *child: children) child->left_activation(t, w);
+           for(BetaMemory *child: children) child->join_activation(t, w);
          }
        } else {
-           for(BetaMemory *child: children) { child->left_activation(nullptr, w); }
+           for(BetaMemory *child: children) { child->join_activation(nullptr, w); }
        }
     }
 
    // pg 25
-   void left_activation(Token *t) {
+   void beta_activation(Token *t) {
      assert(this->amem_src);
      for(WME *w : amem_src->items) {
        if (!this->perform_join_tests(t, w)) continue;
-       for(BetaMemory *child: children) child->left_activation(t, w);
+       for(BetaMemory *child: children) child->join_activation(t, w);
      }
    }
 
@@ -301,7 +289,7 @@ struct JoinNode {
 
         for (TestAtJoinNode test : tests) {
             string arg1 = w->get_field(test.field_of_arg1);
-            WME *wme2 = t->index(test.condition_number_of_arg2);
+            WME *wme2 = t->index(test.ix_in_token_of_arg2);
             string arg2 = wme2->get_field(test.field_of_arg2);
             if (arg1 != arg2) return false;
         }
@@ -318,15 +306,10 @@ ostream& operator << (ostream &os, const JoinNode &join) {
     return os;
 }
 
-void BetaMemory::left_activation(Token *t, WME *w) {
-        cout << __PRETTY_FUNCTION__ << " | t: ";
-        if (t) { cout << *t; } else { cout << "nullptr"; } 
-        cout << " | wme: " << w << "\n";
-
+void BetaMemory::join_activation(Token *t, WME *w) {
         Token *new_token = new Token(w, t);
-        // new_token->parent = t; new_token->wme = w;
         items.push_front(new_token);
-        for (JoinNode *child : children) { child->left_activation(t); }
+        for (JoinNode *child : children) { child->beta_activation(t); }
  }
 
 
@@ -335,7 +318,7 @@ struct ProductionNode : public BetaMemory {
     vector<Token *> items;
     string rhs;
 
-    void left_activation(Token *t, WME *w) override
+    void join_activation(Token *t, WME *w) override
     {
         t = new Token(w, t);
         items.push_back(t);
@@ -374,7 +357,7 @@ struct Rete {
 void alpha_memory_activation(AlphaMemory *node, WME *w) {
     node->items.push_front(w);
     cout << __PRETTY_FUNCTION__ << "| node: " << *node << " | wme: " << w << "\n";
-    for (JoinNode *child : node->successors) child->right_activation(w);
+    for (JoinNode *child : node->successors) child->alpha_activation(w);
 
 }
 
@@ -412,7 +395,7 @@ void update_new_node_with_matches_from_above(BetaMemory *beta) {
       join->children = { beta };
 
       // push alpha memory through join node.
-      for(WME *item : join->amem_src->items) { join->right_activation(item); }
+      for(WME *item : join->amem_src->items) { join->alpha_activation(item); }
       join->children = savedListOfChildren;
 }
 
@@ -513,7 +496,7 @@ vector<TestAtJoinNode> get_join_tests_from_condition(Rete &_, Condition c,
         assert(i != -1); assert(f2 != -1);
         TestAtJoinNode test;
         test.field_of_arg1 = (WMEFieldType) f;
-        test.condition_number_of_arg2 = i;
+        test.ix_in_token_of_arg2 = i;
         test.field_of_arg2 = (WMEFieldType) f2;
         result.push_back(test);
     }
@@ -567,7 +550,6 @@ AlphaMemory *build_or_share_alpha_memory_dataflow(Rete &r, Condition c) {
     assert(currentNode->output_memory == nullptr);
     currentNode->output_memory = new AlphaMemory;
     r.alphamemories.push_back(currentNode->output_memory);
-    printf("%s currentNode->output_memory: %p\n", __FUNCTION__, currentNode->output_memory);
     // initialize AM with any current WMEs
     for (WME *w: r.working_memory) {
         // check if wme passes all constant tests
@@ -595,9 +577,6 @@ ProductionNode *add_production(Rete &r, vector<Condition> lhs, string rhs) {
     //     build/share M[i] (a child of J[i-1]), a beta memory node
     //     build/share J[i] (a child of M[i]), the join node for ci
     // make P (a child of J[k]), the production node
-
-    // PITFALL: this says "dummy top node", not srure if this is the
-    // same as alpha_top.
     vector<Condition> earlierConds;
 
     vector<TestAtJoinNode> tests = 
@@ -768,7 +747,7 @@ void graphBetaNet(Rete &r, Agraph_t *g, int &uid) {
           ss.str("");
           ss << "α-" << test.field_of_arg1 
             << " =? " 
-            << test.condition_number_of_arg2 
+            << test.ix_in_token_of_arg2 
             << "[" << test.field_of_arg2  << "]";
           data.push_back(ss.str());
           ss.str("");
@@ -1012,7 +991,8 @@ void test4_disabled() {
 
 // test a production with 2 conditions. This will
 // test chaining of join nodes.
-// only (B1 on B2) (B2 left-of B3) ought to join
+// only (B1 on B2) (B2 left-of B3) ought to join.
+// Add WME, then add production
 void test5() {
     cout << "====test 5:====\n";
 
@@ -1041,6 +1021,40 @@ void test5() {
     fclose(pngf);
 
     cout << "====\n";
+}
+
+// Same as test5, but opposite order:
+// Add production, then add WME
+void test6() {
+    cout << "====test6:====\n";
+
+    Rete rete;
+    rete.alpha_top = ConstTestNode::dummy_top();
+    rete.consttestnodes.push_back(rete.alpha_top);
+
+    vector<Condition> conds;
+    conds.push_back(Condition(Field::var("x"), Field::constant("on"),
+        Field::var("y")));
+    conds.push_back(Condition(Field::var("y"), Field::constant("left-of"),
+        Field::var("z")));
+
+    ProductionNode *p1 = add_production(rete, conds, "prod1");
+
+    addWME(rete, new WME("B1", "on", "B2"));
+    addWME(rete, new WME("B1", "on", "B3"));
+    addWME(rete, new WME("B2", "left-of", "B3"));
+
+
+    cout << "---\n";
+    FILE *dotf = fopen("test6.dot", "w");
+    FILE *pngf = fopen("test6.png", "w");
+    printGraphViz(rete, dotf, pngf);
+    fclose(dotf);
+    fclose(pngf);
+
+    cout << "====\n";
+
+    assert(p1->items.size() == 1);
 }
 
 void test_from_paper() {
@@ -1094,6 +1108,7 @@ int main() {
     test3();
     // test4_disabled();
     test5();
+    test6();
     test_from_paper();
     return 0;
 }
