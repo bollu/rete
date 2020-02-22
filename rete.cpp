@@ -810,11 +810,6 @@ void test1() {
 // First add WME, then add production
 void test2() {
     cout << "====test2:====\n";
-    WME w1("B1", "on", "B2");
-    WME w2("B1", "on", "B3");
-    WME w3("B1", "color", "red");
-    WME w4("B2", "on", "table");
-
     Rete rete;
     rete.alpha_top = ConstTestNode::dummy_top();
     rete.consttestnodes.push_back(rete.alpha_top);
@@ -838,8 +833,69 @@ void test2() {
 
 }
 
+// add simple WME to match a production with 1 element. 
+// First add WME, then add production
+// mismatches also exist.
+void test3() {
+    cout << "====test3:====\n";
+
+    Rete rete;
+    rete.alpha_top = ConstTestNode::dummy_top();
+    rete.consttestnodes.push_back(rete.alpha_top);
+    rete.beta_top = new ReteDummyTopNode();
+
+
+    addWME(rete, new WME("B1", "on", "B2"));
+    addWME(rete, new WME("B1", "on", "B3"));
+    addWME(rete, new WME("B1", "color", "red"));
+
+    add_production(rete, 
+              std::vector<Condition>({Condition(Field::var("x"),
+                    Field::constant("on"), Field::var("y"))}),
+            "prod1");
+
+    cout << "---\n";
+    FILE *f = fopen("test3.dot", "w");
+    printGraphViz(rete, f);
+    fclose(f);
+
+    cout << "====\n";
+
+}
+
+// Test repeated node variables: x on x
+void test4() {
+    cout << "====test4:====\n";
+
+    Rete rete;
+    rete.alpha_top = ConstTestNode::dummy_top();
+    rete.consttestnodes.push_back(rete.alpha_top);
+    rete.beta_top = new ReteDummyTopNode();
+
+
+    addWME(rete, new WME("B1", "on", "B2"));
+    addWME(rete, new WME("B1", "on", "B3"));
+    addWME(rete, new WME("B1", "on", "B1"));
+    addWME(rete, new WME("B1", "color", "red"));
+
+    add_production(rete, 
+              std::vector<Condition>({Condition(Field::var("x"),
+                    Field::constant("on"), Field::var("x"))}),
+            "prod1");
+
+    cout << "---\n";
+    FILE *f = fopen("test4.dot", "w");
+    printGraphViz(rete, f);
+    fclose(f);
+
+    cout << "====\n";
+
+}
+
 int main() {
     test1();
     test2();
+    test3();
+    test4();
     return 0;
 }
