@@ -1039,7 +1039,7 @@ void test3() {
 // NOTE: I can't find a single place where they actually handle
 // this case, which makes me suspect that this case is *NOT HANDLED*
 // by the rete exposition I'm following.
-void test4() {
+void test4_disabled() {
     cout << "====test4:====\n";
 
     Rete rete;
@@ -1155,7 +1155,7 @@ int main() {
     test1();
     test2();
     test3();
-    // test4();
+    // test4_disabled();
     test5();
     test_from_paper();
     return 0;
