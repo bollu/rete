@@ -661,6 +661,8 @@ ProductionNode *add_production(Rete &r, vector<Condition> lhs, string rhs) {
 void printGraphViz(Rete &r, FILE *f) {
     Agraph_t *g = agopen((char *)"G", Agdirected, nullptr);
     agsafeset(g, (char *)"fontname", (char *)"monospace", (char *)"");
+    Agraph_t *alphag = agsubg(g, "cluster-alpha-network", 1);
+    Agraph_t *betag = agsubg(g, "cluster-beta-network", 1);
 
     map<const void *, Agnode_t*> nodes;
     stringstream ss;
@@ -669,7 +671,7 @@ void printGraphViz(Rete &r, FILE *f) {
     {
         const string uidstr = std::to_string(uid++);
         // ss << *r.beta_top;
-        nodes[r.beta_top] = agnode(g, (char *) uidstr.c_str(), true);
+        nodes[r.beta_top] = agnode(betag, (char *) uidstr.c_str(), true);
         agsafeset(nodes[r.beta_top], 
                 (char *)"fontname", (char*)"monospace", (char *)"");
         agsafeset(nodes[r.beta_top], (char *)"shape", (char *)"box", (char *)"");
@@ -692,9 +694,9 @@ void printGraphViz(Rete &r, FILE *f) {
     for (int i = 0; i < r.alphamemories.size(); ++i) {
         const string uidstr = std::to_string(uid++);
         const AlphaMemory *node = r.alphamemories[i];
-        ss << "(alpha-memory-" << i  << ")";
+        ss << "(α-mem-" << i  << ")";
         string s = ss.str();
-        nodes[node] = agnode(g, (char *) uidstr.c_str(), true);
+        nodes[node] = agnode(alphag, (char *) uidstr.c_str(), true);
         agsafeset(nodes[node], (char *)"fontname", (char *)"monospace", (char *)"");
         agsafeset(nodes[node], (char *)"shape", (char *)"box", (char *)"");
         agsafeset(nodes[node], (char*)"label", (char*)s.c_str(), (char*)"");
@@ -704,9 +706,9 @@ void printGraphViz(Rete &r, FILE *f) {
     for (int i =0; i < r.betamemories.size(); ++i) {
         const string uidstr = std::to_string(uid++);
         const BetaMemory *node = r.betamemories[i];
-        ss << "(beta-memory-" << i << ")";
+        ss << "(β-mem-" << i << ")";
         string s = ss.str();
-        nodes[node] = agnode(g, (char *) uidstr.c_str(), true);
+        nodes[node] = agnode(betag, (char *) uidstr.c_str(), true);
         agsafeset(nodes[node], (char *)"fontname", (char *)"monospace", (char *)"");
         agsafeset(nodes[node], (char *)"shape", (char *)"box", (char *)"");
         agsafeset(nodes[node], (char*)"label", (char*)s.c_str(), (char*)"");
@@ -717,10 +719,10 @@ void printGraphViz(Rete &r, FILE *f) {
     for (int i = 0; i < r.consttestnodes.size(); ++i) {
         const string uidstr = std::to_string(uid++);
         const ConstTestNode *node = r.consttestnodes[i];
-        ss << "(const-test-" << i << " " << 
+        ss << "(" << 
           node->field_to_test << " =? " << node->field_must_equal << ")";
         const string s = ss.str();
-        nodes[node] = agnode(g, (char *) uidstr.c_str(), true);
+        nodes[node] = agnode(alphag, (char *) uidstr.c_str(), true);
         agsafeset(nodes[node], (char *)"fontname", (char *)"monospace", (char *)"");
         agsafeset(nodes[node], (char *)"shape", (char *)"box", (char *)"");
         agsafeset(nodes[node], (char*)"label", (char*)s.c_str(), (char*)"");
@@ -734,7 +736,7 @@ void printGraphViz(Rete &r, FILE *f) {
         for (TestAtJoinNode test : node->tests) { ss << test; }
         ss << ")";
         const string s = ss.str();
-        nodes[node] = agnode(g, (char *)uidstr.c_str(), true);
+        nodes[node] = agnode(betag, (char *)uidstr.c_str(), true);
         agsafeset(nodes[node], (char *)"fontname", (char *)"monospace", (char *)"");
         agsafeset(nodes[node], (char *)"shape", (char *)"box", (char *)"");
         agsafeset(nodes[node], (char *)"label", (char *)s.c_str(), (char *)"");
@@ -752,6 +754,7 @@ void printGraphViz(Rete &r, FILE *f) {
         agsafeset(nodes[node], (char*)"label", (char*)s.c_str(), (char*)"");
         ss.str("");
     }
+
 
     for (AlphaMemory *node : r.alphamemories) {
         for (ReteNode *succ : node->successors) {
