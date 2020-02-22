@@ -671,10 +671,31 @@ ProductionNode *add_production(Rete &r, vector<Condition> lhs, string rhs) {
     return prod;
 }
 
+
+// convert data of the form";
+// header
+// ------
+// data1
+// -----
+// data2
+// ...
+// into html that can be consumed by graphviz
+string table1d_to_html(string heading, vector<string> data) {
+  string s;
+  s += "<table border=\"0\" cellborder='1' cellspacing='0'>";
+  s += "<tr><td>" + heading + "</td></tr>";
+  for (string d: data) {
+      s += "<tr><td BGCOLOR='lightgrey'>" + d + "</td></tr>";
+  }
+  s += "</table>";
+  return s;
+}
+
+
 // =========================
 // END RETE, START EXAMPLES
 // =========================
-void printAlpha(Rete &r, Agraph_t *g, int &uid) {
+void graphAlphaNet(Rete &r, Agraph_t *g, int &uid) {
     Agraph_t *galpha = agsubg(g, (char *)"cluster-alpha-network", 1);
     Agraph_t *gwme = agsubg(galpha, (char *)"cluster-wme", 1);
     agsafeset(gwme, (char*)"style", (char*)"invis", (char*)"");
@@ -684,41 +705,23 @@ void printAlpha(Rete &r, Agraph_t *g, int &uid) {
 
 
     for (int i = 0; i < r.alphamemories.size(); ++i) {
-      {
-        const string uidstr = std::to_string(uid++);
         const AlphaMemory *node = r.alphamemories[i];
-        ss << "(α-mem-" << i  << ")";
-        string s = ss.str();
+        const string uidstr = std::to_string(uid++);
+        vector<string> data;
+        for (WME *wme: node->items) {
+          ss.str("");
+          ss << *wme;
+          data.push_back(ss.str());
+          ss.str("");
+        }
+
+        const string s = table1d_to_html("(α-mem-" + to_string(i)  + ")", data);
         nodes[node] = agnode(galpha, (char *) uidstr.c_str(), true);
         agsafeset(nodes[node], (char *)"fontname", (char *)"monospace", (char *)"");
-        agsafeset(nodes[node], (char *)"shape", (char *)"box", (char *)"");
-        agsafeset(nodes[node], (char*)"label", (char*)s.c_str(), (char*)"");
+        agsafeset(nodes[node], (char *)"shape", (char *)"none", (char *)"");
+        const char *l = agstrdup_html(galpha, (char *)s.c_str());
+        agsafeset(nodes[node], (char *)"label", (char *)l, (char *)"");
         ss.str("");
-       }
-       {
-
-        const string uidstr = std::to_string(uid++);
-        const AlphaMemory *node = r.alphamemories[i];
-        if (!node->items.size()) continue;
-
-        // now create a new node of all the values stored in this alpha cell
-        Agnode_t *owned = agnode(galpha, (char *) uidstr.c_str(), true);
-        agsafeset(owned, (char *)"shape", (char *)"record", (char *)"");
-        agsafeset(owned, (char *)"fontname", (char *)"monospace", (char *)"");
-        ss << "{ ";
-        for (auto it = node->items.begin(); it != node->items.end(); ++it) {
-          ss << (it != node->items.begin() ? "| " : "")  << **it;
-        }
-        ss << "}";
-        string s2 = ss.str();
-        agsafeset(owned, (char*)"label", (char*)s2.c_str(), (char*)"");
-        ss.str("");
-
-        // create an edge
-        Agedge_t *e = agedge(g, nodes[node], owned, nullptr, 1);
-        agsafeset(e, (char*)"arrowhead", (char*)"none", (char*)"");
-        agsafeset(e, (char*)"penwidth", (char*)"3", (char*)"");
-       }
     }
 
 
@@ -755,7 +758,17 @@ void printAlpha(Rete &r, Agraph_t *g, int &uid) {
 
 }
 
-void printBeta(Rete &r, Agraph_t *g, int &uid) {
+
+string token2graphvizstr(const Token *t) {
+  stringstream ss;
+  for (const Token *cur = t; cur != nullptr; cur = cur->parent) {
+    ss << cur->token_chain_ix << ":";
+    ss << *(cur->wme);
+  }
+  return ss.str();
+}
+
+void graphBetaNet(Rete &r, Agraph_t *g, int &uid) {
   // create a new copy of the alpha memory nodes.
   Agraph_t *gbeta = agsubg(g, (char *)"cluster-beta-network", 1);
   Agraph_t *gprod = agsubg(gbeta, (char *)"cluster-production", 1);
@@ -776,59 +789,81 @@ void printBeta(Rete &r, Agraph_t *g, int &uid) {
     }
 
     for (int i =0; i < r.betamemories.size(); ++i) {
-        const string uidstr = std::to_string(uid++);
         const BetaMemory *node = r.betamemories[i];
-        ss << "(β-mem-" << i << ")";
-        string s = ss.str();
+        const string uidstr = std::to_string(uid++);
+        vector<string> data;
+        for (Token *t : node->items) {
+          data.push_back(token2graphvizstr(t));
+        }
+        const string s = table1d_to_html("(β-mem-"+std::to_string(i) +")", 
+            data);
+        const char *l = agstrdup_html(gbeta, (char *)s.c_str());
         nodes[node] = agnode(gbeta, (char *) uidstr.c_str(), true);
         agsafeset(nodes[node], (char *)"fontname", (char *)"monospace", (char *)"");
-        agsafeset(nodes[node], (char *)"shape", (char *)"box", (char *)"");
-        agsafeset(nodes[node], (char*)"label", (char*)s.c_str(), (char*)"");
-        ss.str("");
+        agsafeset(nodes[node], (char *)"shape", (char *)"none", (char *)"");
+        agsafeset(nodes[node], (char *)"margin", (char *)"0", (char *)"");
+        agsafeset(nodes[node], (char*)"label", (char*)l, (char*)"");
     }
 
     for (int i = 0; i < r.joinnodes.size(); ++i) {
         const JoinNode *node = r.joinnodes[i];
         const string uidstr = std::to_string(uid++);
-        ss << "(join-" << i << "; ";
-        for (TestAtJoinNode test : node->tests) { 
-          ss 
-            << test.field_of_arg1 
+
+        vector<string> data;
+        for (TestAtJoinNode test: node->tests) {
+          ss.str("");
+          ss << "α-" << test.field_of_arg1 
             << " =? " 
-            << test.condition_number_of_arg2 << "[" << test.field_of_arg2  << "]" 
-            << "; ";
+            << test.condition_number_of_arg2 
+            << "[" << test.field_of_arg2  << "]";
+          data.push_back(ss.str());
+          ss.str("");
         }
-        ss << ")";
-        const string s = ss.str();
+
+        const string s = table1d_to_html("(join-"+ std::to_string(uid) + ")",
+            data);
         nodes[node] = agnode(gbeta, (char *)uidstr.c_str(), true);
         agsafeset(nodes[node], (char *)"fontname", (char *)"monospace", (char *)"");
-        agsafeset(nodes[node], (char *)"shape", (char *)"box", (char *)"");
-        agsafeset(nodes[node], (char *)"label", (char *)s.c_str(), (char *)"");
+        agsafeset(nodes[node], (char *)"shape", (char *)"none", (char *)"");
+        const char *l = agstrdup_html(gbeta, (char *)s.c_str());
+        agsafeset(nodes[node], (char *)"label", (char *)l, (char *)"");
         ss.str("");
     }
 
 
     for (ProductionNode *node: r.productions) { 
         const string uidstr = std::to_string(uid++);
-        ss << *node;
-        const string s = ss.str();
+        vector<string> data;
+        for (Token *t : node->items) {
+          data.push_back(token2graphvizstr(t));
+        }
+        const string s = table1d_to_html("(prod-"+node->rhs +")", data);
         nodes[node] = agnode(gprod, (char *) uidstr.c_str(), true);
         agsafeset(nodes[node], (char *)"fontname", (char *)"monospace", (char *)"");
-        agsafeset(nodes[node], (char *)"shape", (char *)"box", (char *)"");
-        agsafeset(nodes[node], (char*)"label", (char*)s.c_str(), (char*)"");
+        agsafeset(nodes[node], (char *)"shape", (char *)"none", (char *)"");
+        const char *l = agstrdup_html(gbeta, (char *)s.c_str());
+        agsafeset(nodes[node], (char*)"label", (char*)l, (char*)"");
         ss.str("");
     }
 
     // A copy of alpha-memory for the beta network
     for (int i = 0; i < r.alphamemories.size(); ++i) {
-        const string uidstr = std::to_string(uid++);
         const AlphaMemory *node = r.alphamemories[i];
-        ss << "(α-mem-" << i  << ")";
-        string s = ss.str();
+        const string uidstr = std::to_string(uid++);
+        vector<string> data;
+        for (WME *wme: node->items) {
+          ss.str("");
+          ss << *wme;
+          data.push_back(ss.str());
+          ss.str("");
+        }
+
+        const string s = table1d_to_html("(α-mem-" + to_string(i)  + ")", data);
         nodes[node] = agnode(gbeta, (char *) uidstr.c_str(), true);
         agsafeset(nodes[node], (char *)"fontname", (char *)"monospace", (char *)"");
-        agsafeset(nodes[node], (char *)"shape", (char *)"box", (char *)"");
-        agsafeset(nodes[node], (char*)"label", (char*)s.c_str(), (char*)"");
+        agsafeset(nodes[node], (char *)"shape", (char *)"none", (char *)"");
+        const char *l = agstrdup_html(gbeta, (char *)s.c_str());
+        agsafeset(nodes[node], (char *)"label", (char *)l, (char *)"");
         ss.str("");
     }
 
@@ -878,8 +913,8 @@ void printGraphViz(Rete &r, FILE *dotf, FILE *pngf, bool link_tokens=false) {
     agsafeset(g, (char *)"concentrate", (char *)"true", (char *)"");
 
     int uid = 0;
-    printAlpha(r, g, uid);
-    printBeta(r, g, uid);
+    graphAlphaNet(r, g, uid);
+    graphBetaNet(r, g, uid);
 
 
 
@@ -1192,7 +1227,6 @@ void test4() {
               std::vector<Condition>({Condition(Field::var("x"),
                     Field::constant("on"), Field::var("x"))}),
             "prod1");
-    assert(p1->items.size() == 1);
 
     cout << "---\n";
     FILE *dotf = fopen("test4.dot", "w");
@@ -1200,6 +1234,8 @@ void test4() {
     printGraphViz(rete, dotf, pngf);
     fclose(dotf);
     fclose(pngf);
+
+    assert(p1->items.size() == 1);
 
     cout << "====\n";
 
@@ -1286,10 +1322,10 @@ void test_from_paper() {
 }
 
 int main() {
-    // test1();
-    // test2();
-    // test3();
-    // test4();
+    test1();
+    test2();
+    test3();
+    test4();
     test5();
     test_from_paper();
     return 0;
