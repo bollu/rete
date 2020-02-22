@@ -6,6 +6,7 @@
 #include<typeinfo>
 #include<map>
 #include<graphviz/cgraph.h>
+#include<graphviz/gvc.h>
 #include<sstream>
 #include<cmath>
 #include<cstdlib>
@@ -674,7 +675,8 @@ ProductionNode *add_production(Rete &r, vector<Condition> lhs, string rhs) {
 // END RETE, START EXAMPLES
 // =========================
 
-void printGraphViz(Rete &r, FILE *f, bool link_tokens=false) {
+void printGraphViz(Rete &r, FILE *dotf, FILE *pngf, bool link_tokens=false) {
+    GVC_t *gvc = gvContext();
     Agraph_t *g = agopen((char *)"G", Agdirected, nullptr);
     agsafeset(g, (char *)"fontname", (char *)"monospace", (char *)"");
     agsafeset(g, (char *)"rankdir", (char *)"RL", (char *)"");
@@ -846,11 +848,11 @@ void printGraphViz(Rete &r, FILE *f, bool link_tokens=false) {
 
 
 
-    agwrite(g, f);
-    // gvLayout (gvc, g, "dot");
-    // GVC_t*gvc;
-    // gvc = 
-    // gvRenderFilename (gvc, g, "png", "out.png");
+    assert(dotf);
+    agwrite(g, dotf);
+    gvLayout(gvc, g, "dot");
+    assert(pngf);
+    gvRender(gvc, g, "png", pngf);
 }
 
 // add simple WME to match a production with 1 element.
@@ -893,9 +895,11 @@ void test1() {
     assert(p->items.size() == 2);
 
     cout << "---\n";
-    FILE *f = fopen("test1.dot", "w");
-    printGraphViz(rete, f);
-    fclose(f);
+    FILE *dotf = fopen("test1.dot", "w");
+    FILE *pngf = fopen("test1.png", "w");
+    printGraphViz(rete, dotf, pngf);
+    fclose(dotf);
+    fclose(pngf);
     cout << "====\n";
 }
 
@@ -922,9 +926,11 @@ void test2() {
     assert(p->items.size() == 2);
 
     cout << "---\n";
-    FILE *f = fopen("test2.dot", "w");
-    printGraphViz(rete, f);
-    fclose(f);
+    FILE *dotf = fopen("test2.dot", "w");
+    FILE *pngf = fopen("test2.png", "w");
+    printGraphViz(rete, dotf, pngf);
+    fclose(dotf);
+    fclose(pngf);
 
     cout << "====\n";
 
@@ -953,9 +959,11 @@ void test3() {
     assert(p1->items.size() == 2);
 
     cout << "---\n";
-    FILE *f = fopen("test3.dot", "w");
-    printGraphViz(rete, f);
-    fclose(f);
+    FILE *dotf = fopen("test3.dot", "w");
+    FILE *pngf = fopen("test3.png", "w");
+    printGraphViz(rete, dotf, pngf);
+    fclose(dotf);
+    fclose(pngf);
 
     cout << "====\n";
 
@@ -983,9 +991,11 @@ void test4() {
     assert(p1->items.size() == 1);
 
     cout << "---\n";
-    FILE *f = fopen("test4.dot", "w");
-    printGraphViz(rete, f);
-    fclose(f);
+    FILE *dotf = fopen("test4.dot", "w");
+    FILE *pngf = fopen("test4.png", "w");
+    printGraphViz(rete, dotf, pngf);
+    fclose(dotf);
+    fclose(pngf);
 
     cout << "====\n";
 
@@ -1016,9 +1026,11 @@ void test5() {
     assert(p1->items.size() == 1);
 
     cout << "---\n";
-    FILE *f = fopen("test5.dot", "w");
-    printGraphViz(rete, f);
-    fclose(f);
+    FILE *dotf = fopen("test5.dot", "w");
+    FILE *pngf = fopen("test5.png", "w");
+    printGraphViz(rete, dotf, pngf);
+    fclose(dotf);
+    fclose(pngf);
 
     cout << "====\n";
 }
@@ -1060,9 +1072,11 @@ void test_from_paper() {
         Field::var("d")));
     add_production(rete, conds, "prod1");
     cout << "---\n";
-    FILE *f = fopen("test_from_paper.dot", "w");
-    printGraphViz(rete, f);
-    fclose(f);
+    FILE *dotf = fopen("test_from_paper.dot", "w");
+    FILE *pngf = fopen("test_from_paper.png", "w");
+    printGraphViz(rete, dotf, pngf);
+    fclose(dotf);
+    fclose(pngf);
 
     cout << "====\n";
 }
@@ -1073,6 +1087,6 @@ int main() {
     // test3();
     // test4();
     test5();
-    // test_from_paper();
+    test_from_paper();
     return 0;
 }
