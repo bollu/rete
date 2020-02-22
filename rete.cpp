@@ -956,6 +956,37 @@ void test4() {
 
 }
 
+// test a production with 2 conditions. This will
+// test chaining of join nodes.
+void test5() {
+    cout << "====test 5:====\n";
+
+    Rete rete;
+    rete.alpha_top = ConstTestNode::dummy_top();
+    rete.consttestnodes.push_back(rete.alpha_top);
+    rete.beta_top = new ReteDummyTopNode();
+
+    // addWME(rete, new WME("B1", "on", "B2"));
+    // addWME(rete, new WME("B1", "on", "B3"));
+    // addWME(rete, new WME("B1", "on", "B1"));
+    // addWME(rete, new WME("B2", "left-of", "B3"));
+
+    vector<Condition> conds;
+    conds.push_back(Condition(Field::var("x"), Field::constant("on"),
+        Field::var("y")));
+    conds.push_back(Condition(Field::var("y"), Field::constant("left-of"),
+        Field::var("z")));
+
+    add_production(rete, conds, "prod1");
+
+    cout << "---\n";
+    FILE *f = fopen("test5.dot", "w");
+    printGraphViz(rete, f);
+    fclose(f);
+
+    cout << "====\n";
+}
+
 void test_from_paper() {
     cout << "====test from paper:====\n";
 
@@ -1005,6 +1036,7 @@ int main() {
     test2();
     test3();
     test4();
+    test5();
     test_from_paper();
     return 0;
 }
