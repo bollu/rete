@@ -637,12 +637,15 @@ string table1d_to_html(string heading, vector<string> data) {
   return s;
 }
 
-void graphAlphaNet(Rete &r, Agraph_t *g, int &uid) {
+void graphAlphaNet(Rete &r, Agraph_t *g, int &uid, map<const void *, Agnode_t*> &nodes) {
     Agraph_t *galpha = agsubg(g, (char *)"cluster-alpha-network", 1);
-    Agraph_t *gwme = agsubg(galpha, (char *)"cluster-wme", 1);
-    agsafeset(gwme, (char*)"style", (char*)"invis", (char*)"");
+    agsafeset(galpha, (char*)"color", (char*)"#CCCCCC", (char*)"");
+    agsafeset(galpha, (char*)"penwidth", (char*)"3", (char*)"");
 
-    map<const void *, Agnode_t*> nodes;
+    // Agraph_t *galpha =  agsubg(g, (char *)"cluster-alpha-network", 1);
+    Agraph_t *gamem = agsubg(galpha, (char *)"cluster-wme", 1);
+    agsafeset(gamem, (char*)"style", (char*)"invis", (char*)"");
+
     stringstream ss;
 
 
@@ -658,7 +661,7 @@ void graphAlphaNet(Rete &r, Agraph_t *g, int &uid) {
         }
 
         const string s = table1d_to_html("(α-mem-" + to_string(i)  + ")", data);
-        nodes[node] = agnode(galpha, (char *) uidstr.c_str(), true);
+        nodes[node] = agnode(gamem, (char *) uidstr.c_str(), true);
         agsafeset(nodes[node], (char *)"fontname", (char *)"monospace", (char *)"");
         agsafeset(nodes[node], (char *)"shape", (char *)"none", (char *)"");
         const char *l = agstrdup_html(galpha, (char *)s.c_str());
@@ -728,13 +731,15 @@ string token2graphvizstr(const Token *t) {
   return ss.str();
 }
 
-void graphBetaNet(Rete &r, Agraph_t *g, int &uid) {
+void graphBetaNet(Rete &r, Agraph_t *g, int &uid, map<const void *, Agnode_t*> nodes) {
   // create a new copy of the alpha memory nodes.
   Agraph_t *gbeta = agsubg(g, (char *)"cluster-beta-network", 1);
+  agsafeset(gbeta, (char*)"color", (char*)"#CCCCCC", (char*)"");
+  agsafeset(gbeta, (char*)"penwidth", (char*)"3", (char*)"");
+
   Agraph_t *gprod = agsubg(gbeta, (char *)"cluster-production", 1);
   agsafeset(gprod, (char*)"style", (char*)"invis", (char*)"");
 
-  map<const void *, Agnode_t*> nodes;
   stringstream ss;
 
 
@@ -796,28 +801,6 @@ void graphBetaNet(Rete &r, Agraph_t *g, int &uid) {
         ss.str("");
     }
 
-    // A copy of alpha-memory for the beta network
-    for (int i = 0; i < r.alphamemories.size(); ++i) {
-        const AlphaMemory *node = r.alphamemories[i];
-        const string uidstr = std::to_string(uid++);
-        vector<string> data;
-        for (WME *wme: node->items) {
-          ss.str("");
-          ss << *wme;
-          data.push_back(ss.str());
-          ss.str("");
-        }
-
-        const string s = table1d_to_html("(α-mem-" + to_string(i)  + ")", data);
-        nodes[node] = agnode(gbeta, (char *) uidstr.c_str(), true);
-        agsafeset(nodes[node], (char *)"fontname", (char *)"monospace", (char *)"");
-        agsafeset(nodes[node], (char *)"shape", (char *)"none", (char *)"");
-        const char *l = agstrdup_html(gbeta, (char *)s.c_str());
-        agsafeset(nodes[node], (char *)"label", (char *)l, (char *)"");
-        ss.str("");
-    }
-
-
     // need to print tokens? :( 
     for (BetaMemory *node : r.betamemories) {
         for (JoinNode *succ : node->children) {
@@ -846,12 +829,15 @@ void graphBetaNet(Rete &r, Agraph_t *g, int &uid) {
 void printGraphViz(Rete &r, FILE *dotf, FILE *pngf, bool link_tokens=false) {
     GVC_t *gvc = gvContext();
     Agraph_t *g = agopen((char *)"G", Agdirected, nullptr);
+    agsafeset(g, (char *)"rankdir", (char *)"TB", (char *)"");
     agsafeset(g, (char *)"fontname", (char *)"monospace", (char *)"");
+    agsafeset(g, (char *)"overlap", (char *)"compress", (char *)"");
     agsafeset(g, (char *)"concentrate", (char *)"true", (char *)"");
 
     int uid = 0;
-    graphAlphaNet(r, g, uid);
-    graphBetaNet(r, g, uid);
+    map<const void *, Agnode_t*> nodes;
+    graphAlphaNet(r, g, uid, nodes);
+    graphBetaNet(r, g, uid, nodes);
 
     assert(dotf);
     agwrite(g, dotf);
