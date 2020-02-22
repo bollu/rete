@@ -674,7 +674,7 @@ ProductionNode *add_production(Rete &r, vector<Condition> lhs, string rhs) {
 // END RETE, START EXAMPLES
 // =========================
 
-void printGraphViz(Rete &r, FILE *f) {
+void printGraphViz(Rete &r, FILE *f, bool link_tokens=false) {
     Agraph_t *g = agopen((char *)"G", Agdirected, nullptr);
     agsafeset(g, (char *)"fontname", (char *)"monospace", (char *)"");
     agsafeset(g, (char *)"rankdir", (char *)"RL", (char *)"");
@@ -799,9 +799,12 @@ void printGraphViz(Rete &r, FILE *f) {
             Agedge_t *e = agedge(g, nodes[node], nodes[succ], nullptr, 1);
         }
 
-        for (Token *t : node->items) {
-          for(Token *cur = t; cur != nullptr; cur = cur->parent) {
-            Agedge_t *e = agedge(g, nodes[cur->wme], nodes[node], nullptr, 1);
+        // good way to link tokens?
+        if (link_tokens) {
+          for (Token *t : node->items) {
+            for(Token *cur = t; cur != nullptr; cur = cur->parent) {
+              Agedge_t *e = agedge(g, nodes[cur->wme], nodes[node], nullptr, 1);
+            }
           }
         }
     }
@@ -825,6 +828,15 @@ void printGraphViz(Rete &r, FILE *f) {
     for (ProductionNode *node : r.productions) {
         for(ReteNode *succ : node->children) {
             Agedge_t *e = agedge(g, nodes[node], nodes[succ], nullptr, 1);
+        }
+
+        // good way to link tokens?
+        if (link_tokens) {
+          for (Token *t : node->items) {
+            for(Token *cur = t; cur != nullptr; cur = cur->parent) {
+              Agedge_t *e = agedge(g, nodes[cur->wme], nodes[node], nullptr, 1);
+            }
+          }
         }
     }
 
