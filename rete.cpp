@@ -263,7 +263,7 @@ struct TestAtJoinNode {
 };
 
 ostream& operator << (ostream &os, const TestAtJoinNode &test) {
-    os << "(test-at-join";
+    os << "(test-at-join ";
     os << test.field_of_arg1 << " ==  " << 
         test.condition_number_of_arg2 << "[" << test.field_of_arg2  << "]";
     os << ")";
@@ -663,7 +663,10 @@ void printGraphViz(Rete &r, FILE *f) {
     agsafeset(g, (char *)"fontname", (char *)"monospace", (char *)"");
     agsafeset(g, (char *)"rankdir", (char *)"RL", (char *)"");
     Agraph_t *alphag = agsubg(g, (char *)"cluster-alpha-network", 1);
-    Agraph_t *betag = agsubg(g, (char *)"cluster-beta-network", 1);
+    agsafeset(alphag, (char *)"rankdir", (char *)"RL", (char *)"");
+
+    Agraph_t *betag = agsubg(g, (char *)"cluster-beta-network-inner", 1);
+    agsafeset(betag, (char *)"rankdir", (char *)"TB", (char *)"");
     Agraph_t *gwme = agsubg(g, (char *)"cluster-wme", 1);
 
     map<const void *, Agnode_t*> nodes;
@@ -735,7 +738,13 @@ void printGraphViz(Rete &r, FILE *f) {
         const JoinNode *node = r.joinnodes[i];
         const string uidstr = std::to_string(uid++);
         ss << "(join-" << i << " ";
-        for (TestAtJoinNode test : node->tests) { ss << test; }
+        for (TestAtJoinNode test : node->tests) { 
+          ss 
+            << test.field_of_arg1 
+            << " =? " 
+            << test.condition_number_of_arg2 << "[" << test.field_of_arg2  << "]" 
+            << "; ";
+        }
         ss << ")";
         const string s = ss.str();
         nodes[node] = agnode(betag, (char *)uidstr.c_str(), true);
