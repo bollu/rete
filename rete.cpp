@@ -661,8 +661,10 @@ ProductionNode *add_production(Rete &r, vector<Condition> lhs, string rhs) {
 void printGraphViz(Rete &r, FILE *f) {
     Agraph_t *g = agopen((char *)"G", Agdirected, nullptr);
     agsafeset(g, (char *)"fontname", (char *)"monospace", (char *)"");
-    Agraph_t *alphag = agsubg(g, "cluster-alpha-network", 1);
-    Agraph_t *betag = agsubg(g, "cluster-beta-network", 1);
+    agsafeset(g, (char *)"rankdir", (char *)"RL", (char *)"");
+    Agraph_t *alphag = agsubg(g, (char *)"cluster-alpha-network", 1);
+    Agraph_t *betag = agsubg(g, (char *)"cluster-beta-network", 1);
+    Agraph_t *gwme = agsubg(g, (char *)"cluster-wme", 1);
 
     map<const void *, Agnode_t*> nodes;
     stringstream ss;
@@ -683,7 +685,7 @@ void printGraphViz(Rete &r, FILE *f) {
         const string uidstr = std::to_string(uid++);
         ss << *node;
         const string s = ss.str();
-        nodes[node] = agnode(g, (char *) uidstr.c_str(), true);
+        nodes[node] = agnode(gwme, (char *) uidstr.c_str(), true);
         agsafeset(nodes[node], (char *)"fontname", (char *)"monospace", (char *)"");
         agsafeset(nodes[node], (char *)"shape", (char *)"box", (char *)"");
         agsafeset(nodes[node], (char*)"label", (char*)s.c_str(), (char*)"");
@@ -808,6 +810,10 @@ void printGraphViz(Rete &r, FILE *f) {
 
 
     agwrite(g, f);
+    // gvLayout (gvc, g, "dot");
+    // GVC_t*gvc;
+    // gvc = 
+    // gvRenderFilename (gvc, g, "png", "out.png");
 }
 
 // add simple WME to match a production with 1 element.
@@ -950,10 +956,10 @@ void test_from_paper() {
     rete.beta_top = new ReteDummyTopNode();
 
 
-    // addWME(rete, new WME("B1", "on", "B2"));
-    // addWME(rete, new WME("B1", "on", "B3"));
-    // addWME(rete, new WME("B1", "on", "B1"));
-    // addWME(rete, new WME("B1", "color", "red"));
+    addWME(rete, new WME("B1", "on", "B2"));
+    addWME(rete, new WME("B1", "on", "B3"));
+    addWME(rete, new WME("B1", "on", "B1"));
+    addWME(rete, new WME("B1", "color", "red"));
 
     vector<Condition> conds;
     conds.push_back(Condition(Field::var("x"), Field::constant("on"),
