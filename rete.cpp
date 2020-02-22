@@ -5,8 +5,10 @@
 #include<assert.h>
 #include<typeinfo>
 #include<map>
-#include <graphviz/cgraph.h>
+#include<graphviz/cgraph.h>
 #include<sstream>
+#include<cmath>
+#include<cstdlib>
 
 
 using namespace std;
@@ -511,9 +513,8 @@ void lookup_earlier_cond_with_field(const vector<Condition> &earlierConds,
     *i = earlierConds.size() - 1;
     *f2 = -1;
 
-    auto it = earlierConds.rend();
     bool found = false;
-    while(it != earlierConds.rbegin()) {
+    for(auto it = earlierConds.rbegin(); it != earlierConds.rend(); ++it) {
         for (int j = 0; j < (int)WMEFieldType::NumFields; ++j) {
             if (it->attrs[j].type != FieldType::Var) continue;
             if (it->attrs[j].v == v) { 
@@ -521,7 +522,7 @@ void lookup_earlier_cond_with_field(const vector<Condition> &earlierConds,
                 return;
             }
         }
-        i--;
+        (*i)--;
     }
     *i = *f2 = -1;
 }
@@ -659,64 +660,96 @@ ProductionNode *add_production(Rete &r, vector<Condition> lhs, string rhs) {
 
 void printGraphViz(Rete &r, FILE *f) {
     Agraph_t *g = agopen((char *)"G", Agdirected, nullptr);
-    agsafeset(g, (char *)"fontname", (char *)"monospace", (char *)"monospace");
+    agsafeset(g, (char *)"fontname", (char *)"monospace", (char *)"");
 
-    map<void *, Agnode_t*> nodes;
+    map<const void *, Agnode_t*> nodes;
     stringstream ss;
 
+    int uid = 0;
     {
+        const string uidstr = std::to_string(uid++);
         // ss << *r.beta_top;
-        nodes[r.beta_top] = agnode(g, (char *) "beta-top", true);
+        nodes[r.beta_top] = agnode(g, (char *) uidstr.c_str(), true);
         agsafeset(nodes[r.beta_top], 
-                (char *)"fontname", (char *)"monospace", (char *)"monospace");
+                (char *)"fontname", (char*)"monospace", (char *)"");
+        agsafeset(nodes[r.beta_top], (char *)"shape", (char *)"box", (char *)"");
+        agsafeset(nodes[r.beta_top], (char*)"label", (char*)"beta-top", (char*)"");
         ss.str("");
     }
 
     for (WME *node: r.working_memory) {
+        const string uidstr = std::to_string(uid++);
         ss << *node;
-        string s = ss.str();
-        nodes[node] = agnode(g, (char *) s.c_str(), true);
+        const string s = ss.str();
+        nodes[node] = agnode(g, (char *) uidstr.c_str(), true);
+        agsafeset(nodes[node], (char *)"fontname", (char *)"monospace", (char *)"");
+        agsafeset(nodes[node], (char *)"shape", (char *)"box", (char *)"");
+        agsafeset(nodes[node], (char*)"label", (char*)s.c_str(), (char*)"");
         ss.str("");
     }
 
 
-    for (AlphaMemory *node: r.alphamemories) { 
-        string s = "(alpha-memory)";
-        nodes[node] = agnode(g, (char *)s.c_str(), true);
-        agsafeset(nodes[node], (char *)"fontname", (char *)"monospace", (char *)"monospace");
+    for (int i = 0; i < r.alphamemories.size(); ++i) {
+        const string uidstr = std::to_string(uid++);
+        const AlphaMemory *node = r.alphamemories[i];
+        ss << "(alpha-memory-" << i  << ")";
+        string s = ss.str();
+        nodes[node] = agnode(g, (char *) uidstr.c_str(), true);
+        agsafeset(nodes[node], (char *)"fontname", (char *)"monospace", (char *)"");
+        agsafeset(nodes[node], (char *)"shape", (char *)"box", (char *)"");
+        agsafeset(nodes[node], (char*)"label", (char*)s.c_str(), (char*)"");
         ss.str("");
     }
 
-    for (BetaMemory *node: r.betamemories) { 
-        ss << *node;
+    for (int i =0; i < r.betamemories.size(); ++i) {
+        const string uidstr = std::to_string(uid++);
+        const BetaMemory *node = r.betamemories[i];
+        ss << "(beta-memory-" << i << ")";
         string s = ss.str();
-        nodes[node] = agnode(g, (char *)s.c_str(), true);
-        agsafeset(nodes[node], (char *)"fontname", (char *)"monospace", (char *)"monospace");
+        nodes[node] = agnode(g, (char *) uidstr.c_str(), true);
+        agsafeset(nodes[node], (char *)"fontname", (char *)"monospace", (char *)"");
+        agsafeset(nodes[node], (char *)"shape", (char *)"box", (char *)"");
+        agsafeset(nodes[node], (char*)"label", (char*)s.c_str(), (char*)"");
         ss.str("");
     }
 
 
-    for (ConstTestNode *node: r.consttestnodes) { 
-        ss << *node;
-        string s = ss.str();
-        nodes[node] = agnode(g, (char *)s.c_str(), true);
-        agsafeset(nodes[node], (char *)"fontname", (char *)"monospace", (char *)"monospace");
+    for (int i = 0; i < r.consttestnodes.size(); ++i) {
+        const string uidstr = std::to_string(uid++);
+        const ConstTestNode *node = r.consttestnodes[i];
+        ss << "(const-test-" << i << " " << 
+          node->field_to_test << " =? " << node->field_must_equal << ")";
+        const string s = ss.str();
+        nodes[node] = agnode(g, (char *) uidstr.c_str(), true);
+        agsafeset(nodes[node], (char *)"fontname", (char *)"monospace", (char *)"");
+        agsafeset(nodes[node], (char *)"shape", (char *)"box", (char *)"");
+        agsafeset(nodes[node], (char*)"label", (char*)s.c_str(), (char*)"");
         ss.str("");
     }
 
-    for (JoinNode *node: r.joinnodes) { 
-        ss << *node;
-        string s = ss.str();
-        nodes[node] = agnode(g, (char *)s.c_str(), true);
-        agsafeset(nodes[node], (char *)"fontname", (char *)"monospace", (char *)"monospace");
+    for (int i = 0; i < r.joinnodes.size(); ++i) {
+        const JoinNode *node = r.joinnodes[i];
+        const string uidstr = std::to_string(uid++);
+        ss << "(join-" << i << " ";
+        for (TestAtJoinNode test : node->tests) { ss << test; }
+        ss << ")";
+        const string s = ss.str();
+        nodes[node] = agnode(g, (char *)uidstr.c_str(), true);
+        agsafeset(nodes[node], (char *)"fontname", (char *)"monospace", (char *)"");
+        agsafeset(nodes[node], (char *)"shape", (char *)"box", (char *)"");
+        agsafeset(nodes[node], (char *)"label", (char *)s.c_str(), (char *)"");
+        agsafeset(nodes[node], (char*)"label", (char*)s.c_str(), (char*)"");
         ss.str("");
     }
 
     for (ProductionNode *node: r.productions) { 
+        const string uidstr = std::to_string(uid++);
         ss << *node;
-        string s = ss.str();
-        nodes[node] = agnode(g, (char *)s.c_str(), true);
-        agsafeset(nodes[node], (char *)"fontname", (char *)"monospace", (char *)"monospace");
+        const string s = ss.str();
+        nodes[node] = agnode(g, (char *) uidstr.c_str(), true);
+        agsafeset(nodes[node], (char *)"fontname", (char *)"monospace", (char *)"");
+        agsafeset(nodes[node], (char *)"shape", (char *)"box", (char *)"");
+        agsafeset(nodes[node], (char*)"label", (char*)s.c_str(), (char*)"");
         ss.str("");
     }
 
@@ -729,6 +762,19 @@ void printGraphViz(Rete &r, FILE *f) {
             Agedge_t *e = agedge(g, nodes[wme], nodes[node], nullptr, 1);
         }
     }
+
+    // need to print tokens? :( 
+    /*
+    for (BetaMemory *node : r.betamemories) {
+        for (ReteNode *succ : node->successors) {
+            Agedge_t *e = agedge(g, nodes[node], nodes[succ], nullptr, 1);
+        }
+
+        for (WME * wme : node->items) {
+            Agedge_t *e = agedge(g, nodes[wme], nodes[node], nullptr, 1);
+        }
+    }
+    */
 
     for (ConstTestNode *node : r.consttestnodes) {
         for(ConstTestNode *succ : node->children) {
@@ -863,7 +909,7 @@ void test3() {
 
 }
 
-// Test repeated node variables: x on x
+// Test repeated node variables: (x on x)
 void test4() {
     cout << "====test4:====\n";
 
@@ -892,10 +938,55 @@ void test4() {
 
 }
 
+void test_from_paper() {
+    cout << "====test from paper:====\n";
+
+    Rete rete;
+    rete.alpha_top = ConstTestNode::dummy_top();
+    rete.consttestnodes.push_back(rete.alpha_top);
+    rete.beta_top = new ReteDummyTopNode();
+
+
+    // addWME(rete, new WME("B1", "on", "B2"));
+    // addWME(rete, new WME("B1", "on", "B3"));
+    // addWME(rete, new WME("B1", "on", "B1"));
+    // addWME(rete, new WME("B1", "color", "red"));
+
+    vector<Condition> conds;
+    conds.push_back(Condition(Field::var("x"), Field::constant("on"),
+        Field::var("y")));
+    conds.push_back(Condition(Field::var("y"), Field::constant("left-of"),
+        Field::var("z")));
+    conds.push_back(Condition(Field::var("z"), Field::constant("color"),
+        Field::constant("red")));
+    conds.push_back(Condition(Field::var("a"), Field::constant("color"),
+        Field::constant("maize")));
+    conds.push_back(Condition(Field::var("b"), Field::constant("color"),
+        Field::constant("blue")));
+    conds.push_back(Condition(Field::var("c"), Field::constant("color"),
+        Field::constant("green")));
+    conds.push_back(Condition(Field::var("d"), Field::constant("color"),
+        Field::constant("white")));
+    conds.push_back(Condition(Field::var("s"), Field::constant("on"),
+        Field::constant("table")));
+    conds.push_back(Condition(Field::var("y"), Field::var("a"),
+        Field::var("b")));
+    conds.push_back(Condition(Field::var("a"), Field::constant("left-of"),
+        Field::var("d")));
+    add_production(rete, conds, "prod1");
+    cout << "---\n";
+    FILE *f = fopen("test_from_paper.dot", "w");
+    printGraphViz(rete, f);
+    fclose(f);
+
+    cout << "====\n";
+}
+
 int main() {
     test1();
     test2();
     test3();
     test4();
+    test_from_paper();
     return 0;
 }
