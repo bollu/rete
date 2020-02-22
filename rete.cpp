@@ -119,30 +119,30 @@ struct ReteNode {
     ReteNode *parent;
     ReteNode() { parent = nullptr; }
     // activation from alpha node
-    virtual void right_activation(WME w) = 0;
+    virtual void right_activation(WME *w) = 0;
     // activation from beat node
     virtual void left_activation(Token *t) = 0;
-    virtual void left_activation(Token *t, WME w) = 0;
+    virtual void left_activation(Token *t, WME *w) = 0;
 };
 
 
 // inferred from diagrams on pg. 10
 struct ReteDummyTopNode : public ReteNode {
-    void right_activation(WME w) { assert(false && "unimplement ReteDummyTopNode"); }
+    void right_activation(WME *w) { assert(false && "unimplement ReteDummyTopNode"); }
     // activation from beat node
     void left_activation(Token *t) { assert(false && "unimplement ReteDummyTopNode"); }
-    void left_activation(Token *t, WME w) { assert(false && "unimplement ReteDummyTopNode"); }
+    void left_activation(Token *t, WME *w) { assert(false && "unimplement ReteDummyTopNode"); }
 };
 
 
 // pg 21
 struct AlphaMemory {
-    list<WME> items;
+    list<WME*> items;
     list<ReteNode *> successors;
 };
 ostream &operator << (ostream &os, const AlphaMemory &am) {
     os <<  "(alpha-memory:" << am.items.size() << " ";
-    for (WME wme : am.items) os << wme << " ";
+    for (WME *wme : am.items) os << *wme << " ";
     os << ")";
     return os;
 }
@@ -189,9 +189,9 @@ std::ostream& operator << (std::ostream &os, const ConstTestNode &node) {
 struct Token {
     Token *parent; // items [0..i-1]
     int token_chain_ix;
-    WME wme; // item i
+    WME *wme; // item i
 
-    Token(WME wme, Token *parent) : wme(wme), parent(parent) {
+    Token(WME *wme, Token *parent) : wme(wme), parent(parent) {
         if (!parent) { token_chain_ix = 0; }
         else { token_chain_ix = parent->token_chain_ix+1; }
     }
@@ -199,7 +199,7 @@ struct Token {
     // implicitly stated on pages:
     // - pg 20
     // - pg 25 {With list-form tokens,the following statement is really a loop}
-    WME index(int ix) {
+    WME *index(int ix) {
         assert(ix >= 0);
         assert(ix < token_chain_ix);
         if (ix == token_chain_ix-1) { return wme; }
@@ -222,11 +222,11 @@ ostream &operator << (ostream &os, const Token &t) {
 struct BetaMemory : public ReteNode {
     list<Token*> items;
 
-    void right_activation(WME w) override { assert(false && "unimplemented"); }
+    void right_activation(WME *w) override { assert(false && "unimplemented"); }
     void left_activation(Token *t) override { assert(false && "unimplemented"); }
     // pg 23: dodgy! the types are different from BetaMemory and their children
     // updates
-    void left_activation(Token *t, WME w) override {
+    void left_activation(Token *t, WME *w) override {
         cout << __PRETTY_FUNCTION__ << " | t: " << *t << " | wme: " << w << "\n";
         Token *new_token = new Token(w, t);
         // new_token->parent = t; new_token->wme = w;
@@ -277,7 +277,7 @@ struct JoinNode : public ReteNode {
     JoinNode() : ReteNode(), amem(nullptr) {};
 
     // pg 24
-    void right_activation(WME w) override {
+    void right_activation(WME *w) override {
         cout << __PRETTY_FUNCTION__ << " | w: " <<  w << "\n";
         if (BetaMemory *beta_parent = dynamic_cast<BetaMemory *>(parent)) {
             // does not have to be; can be a dummy top node.
@@ -300,22 +300,22 @@ struct JoinNode : public ReteNode {
     // pg 25
     void left_activation(Token *t) override {
         cout << __PRETTY_FUNCTION__ << " | t: " << *t << "\n";
-        for(WME w : amem->items) {
+        for(WME *w : amem->items) {
             if (!this->perform_join_tests(t, w)) continue;
             for(ReteNode *child: children) child->left_activation(t, w);
         }
     }
 
-    void left_activation(Token *t, WME w) override { 
+    void left_activation(Token *t, WME *w) override { 
         assert(false && "unimplemented");
     }
 
     // pg 25
-    bool perform_join_tests(Token *t, WME w) const {
+    bool perform_join_tests(Token *t, WME *w) const {
         for (TestAtJoinNode test : tests) {
-            string arg1 = w.get_field(test.field_of_arg1);
-            WME wme2 = t->index(test.condition_number_of_arg2);
-            string arg2 = wme2.get_field(test.field_of_arg2);
+            string arg1 = w->get_field(test.field_of_arg1);
+            WME *wme2 = t->index(test.condition_number_of_arg2);
+            string arg2 = wme2->get_field(test.field_of_arg2);
             if (arg1 != arg2) return false;
         }
         return true;
@@ -336,7 +336,7 @@ struct ProductionNode : public ReteNode {
     string rhs;
 
     // activation from alpha node
-    void right_activation(WME w)
+    void right_activation(WME *w)
     { assert(false && "have not thought about it");
     }
     // activation from beat node
@@ -344,10 +344,10 @@ struct ProductionNode : public ReteNode {
     { 
         cout << "(" << *t << " ~ " << rhs << ")";
     }
-    void left_activation(Token *t, WME w)
+    void left_activation(Token *t, WME *w)
     { 
-        if (t) { cout << "## (PROD " << *t << ": " << w << " ~ " << rhs << ") ##\n"; }
-        else { cout << "## (PROD " << "0x0" << ": " << w << " ~ " << rhs << ") ##\n"; }
+        if (t) { cout << "## (PROD " << *t << ": " << *w << " ~ " << rhs << ") ##\n"; }
+        else { cout << "## (PROD " << "0x0" << ": " << *w << " ~ " << rhs << ") ##\n"; }
     }
         // assert(false && "have not thought about it"); }
 };
@@ -374,14 +374,14 @@ struct Rete {
     // inferred from page 35: build_or_share_alpha memory:
     // { initialize am with any current WMEs }
     // presupposes knowledge of a collection of WMEs
-    vector<WME> working_memory;
+    vector<WME*> working_memory;
 };
 
 
 
 
 // pg 21
-void alpha_memory_activation(AlphaMemory *node, WME w) {
+void alpha_memory_activation(AlphaMemory *node, WME *w) {
     node->items.push_front(w);
     cout << __PRETTY_FUNCTION__ << "| node: " << *node << " | wme: " << w << "\n";
     for (ReteNode *child : node->successors) child->right_activation(w);
@@ -390,11 +390,11 @@ void alpha_memory_activation(AlphaMemory *node, WME w) {
 
 // pg 15
 // return whether test succeeded or not.
-bool const_test_node_activation(ConstTestNode *node, WME w) {
+bool const_test_node_activation(ConstTestNode *node, WME *w) {
     cout << __PRETTY_FUNCTION__ << "| node: " << *node << " | wme: " << w << "\n";
 
     if (node->field_to_test != WMEFieldType::None) {
-        if (w.get_field(node->field_to_test) != node->field_must_equal) {
+        if (w->get_field(node->field_to_test) != node->field_must_equal) {
             return false;
         }
     }
@@ -409,7 +409,7 @@ bool const_test_node_activation(ConstTestNode *node, WME w) {
 }
 
 // pg 14
-void addWME(Rete &r, WME w) {
+void addWME(Rete &r, WME *w) {
     r.working_memory.push_back(w);
     const_test_node_activation(r.alpha_top, w);
 }
@@ -430,7 +430,7 @@ void update_new_node_with_matches_from_above(ReteNode *newNode) {
 
         // WTF?
         join->children = { newNode };
-        for(WME item : join->amem->items) { join->right_activation(item); }
+        for(WME *item : join->amem->items) { join->right_activation(item); }
         join->children = savedListOfChildren;
     } else { assert(false && "unknown parent type"); }
 
@@ -573,10 +573,10 @@ ConstTestNode *build_or_share_constant_test_node(Rete &r,
 }
 
 // implied in page 35: build_or_share_alpha_memory.
-bool wme_passes_constant_tests(WME w, Condition c) {
+bool wme_passes_constant_tests(WME *w, Condition c) {
     for(int f = 0; f < (int)WMEFieldType::NumFields; ++f) {
         if (c.attrs[f].type != FieldType::Const) continue;
-        if (c.attrs[f].v != w.fields[f]) return false;
+        if (c.attrs[f].v != w->fields[f]) return false;
     }
     return true;
 }
@@ -599,7 +599,7 @@ AlphaMemory *build_or_share_alpha_memory_dataflow(Rete &r, Condition c) {
     r.alphamemories.push_back(currentNode->output_memory);
     printf("%s currentNode->output_memory: %p\n", __FUNCTION__, currentNode->output_memory);
     // initialize AM with any current WMEs
-    for (WME w: r.working_memory) {
+    for (WME *w: r.working_memory) {
         // check if wme passes all constant tests
         if (wme_passes_constant_tests(w, c)) {
             alpha_memory_activation(currentNode->output_memory, w);
@@ -672,19 +672,16 @@ void printGraphViz(Rete &r, FILE *f) {
         ss.str("");
     }
 
-    /*
-    for (int i = 0; i < r.working_memory.size(); ++i) {
-        ss << r.working_memory[i];
+    for (WME *node: r.working_memory) {
+        ss << *node;
         string s = ss.str();
-        nodes[&r.working_memory.front() + i] = agnode(g, (char *) s.c_str(), true);
+        nodes[node] = agnode(g, (char *) s.c_str(), true);
         ss.str("");
     }
-    */
 
 
     for (AlphaMemory *node: r.alphamemories) { 
-        ss << *node;
-        string s = ss.str();
+        string s = "(alpha-memory)";
         nodes[node] = agnode(g, (char *)s.c_str(), true);
         agsafeset(nodes[node], (char *)"fontname", (char *)"monospace", (char *)"monospace");
         ss.str("");
@@ -726,6 +723,10 @@ void printGraphViz(Rete &r, FILE *f) {
     for (AlphaMemory *node : r.alphamemories) {
         for (ReteNode *succ : node->successors) {
             Agedge_t *e = agedge(g, nodes[node], nodes[succ], nullptr, 1);
+        }
+
+        for (WME * wme : node->items) {
+            Agedge_t *e = agedge(g, nodes[wme], nodes[node], nullptr, 1);
         }
     }
 
@@ -793,8 +794,8 @@ void test1() {
 
     cout << "added production\n";
 
-    addWME(rete, WME("B1", "on", "B2"));
-    addWME(rete, WME("B1", "on", "B3"));
+    addWME(rete, new WME("B1", "on", "B2"));
+    addWME(rete, new WME("B1", "on", "B3"));
 
     cout << "---\n";
     FILE *f = fopen("test1.dot", "w");
@@ -820,8 +821,8 @@ void test2() {
     rete.beta_top = new ReteDummyTopNode();
 
 
-    addWME(rete, WME("B1", "on", "B2"));
-    addWME(rete, WME("B1", "on", "B3"));
+    addWME(rete, new WME("B1", "on", "B2"));
+    addWME(rete, new WME("B1", "on", "B3"));
 
     add_production(rete, 
               std::vector<Condition>({Condition(Field::var("x"),
