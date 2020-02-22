@@ -684,6 +684,7 @@ void printAlpha(Rete &r, Agraph_t *g, int &uid) {
 
 
     for (int i = 0; i < r.alphamemories.size(); ++i) {
+      {
         const string uidstr = std::to_string(uid++);
         const AlphaMemory *node = r.alphamemories[i];
         ss << "(α-mem-" << i  << ")";
@@ -693,6 +694,31 @@ void printAlpha(Rete &r, Agraph_t *g, int &uid) {
         agsafeset(nodes[node], (char *)"shape", (char *)"box", (char *)"");
         agsafeset(nodes[node], (char*)"label", (char*)s.c_str(), (char*)"");
         ss.str("");
+       }
+       {
+
+        const string uidstr = std::to_string(uid++);
+        const AlphaMemory *node = r.alphamemories[i];
+        if (!node->items.size()) continue;
+
+        // now create a new node of all the values stored in this alpha cell
+        Agnode_t *owned = agnode(galpha, (char *) uidstr.c_str(), true);
+        agsafeset(owned, (char *)"shape", (char *)"record", (char *)"");
+        agsafeset(owned, (char *)"fontname", (char *)"monospace", (char *)"");
+        ss << "{ ";
+        for (auto it = node->items.begin(); it != node->items.end(); ++it) {
+          ss << (it != node->items.begin() ? "| " : "")  << **it;
+        }
+        ss << "}";
+        string s2 = ss.str();
+        agsafeset(owned, (char*)"label", (char*)s2.c_str(), (char*)"");
+        ss.str("");
+
+        // create an edge
+        Agedge_t *e = agedge(g, nodes[node], owned, nullptr, 1);
+        agsafeset(e, (char*)"arrowhead", (char*)"none", (char*)"");
+        agsafeset(e, (char*)"penwidth", (char*)"3", (char*)"");
+       }
     }
 
 
@@ -709,29 +735,11 @@ void printAlpha(Rete &r, Agraph_t *g, int &uid) {
         ss.str("");
     }
 
-    for (WME *node: r.working_memory) {
-        const string uidstr = std::to_string(uid++);
-        ss << *node;
-        const string s = ss.str();
-        nodes[node] = agnode(gwme, (char *) uidstr.c_str(), true);
-        agsafeset(nodes[node], (char *)"fontname", (char *)"monospace", (char *)"");
-        agsafeset(nodes[node], (char *)"shape", (char *)"box", (char *)"");
-        agsafeset(nodes[node], (char*)"label", (char*)s.c_str(), (char*)"");
-        ss.str("");
-    }
-
     for (AlphaMemory *node : r.alphamemories) {
         for (ReteNode *succ : node->successors) {
           auto it = nodes.find(succ);
           if (it == nodes.end()) continue;
           Agedge_t *e = agedge(g, nodes[node], nodes[succ], nullptr, 1);
-        }
-
-        for (WME * wme : node->items) {
-            Agedge_t *e = agedge(g, nodes[node], nodes[wme], nullptr, 1);
-            agsafeset(e, (char*)"arrowhead", (char*)"none", (char*)"");
-            agsafeset(e, (char*)"penwidth", (char*)"3", (char*)"");
-
         }
     }
 
