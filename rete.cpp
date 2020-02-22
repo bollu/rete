@@ -202,9 +202,12 @@ struct Token {
     // - pg 20
     // - pg 25 {With list-form tokens,the following statement is really a loop}
     WME *index(int ix) {
+        if (! ((ix >= 0) && (ix< token_chain_ix))) {
+            cerr << "ix: " << ix << " token_chain_ix: " << token_chain_ix << " wme: " << *wme << "\n";
+        }
         assert(ix >= 0);
-        assert(ix < token_chain_ix);
-        if (ix == token_chain_ix-1) { return wme; }
+        assert(ix <= token_chain_ix);
+        if (ix == token_chain_ix) { return wme; }
         assert(parent != nullptr);
         return parent->index(ix);
     }
@@ -213,9 +216,11 @@ struct Token {
 ostream &operator << (ostream &os, const Token &t) {
     os << "(";
     for(const Token *p = &t; p != nullptr; p = p->parent) {
-        os << p->wme << "->";
+        assert(p->wme);
+        os << *(p->wme);
+        if (p->parent != nullptr) { os << "->";}
     }
-    os << "NULL)";
+    os << ")";
     return os;
 }
 
@@ -229,7 +234,10 @@ struct BetaMemory : public ReteNode {
     // pg 23: dodgy! the types are different from BetaMemory and their children
     // updates
     void left_activation(Token *t, WME *w) override {
-        cout << __PRETTY_FUNCTION__ << " | t: " << *t << " | wme: " << w << "\n";
+        cout << __PRETTY_FUNCTION__ << " | t: ";
+        if (t) { cout << *t; } else { cout << "nullptr"; } 
+        cout << " | wme: " << w << "\n";
+
         Token *new_token = new Token(w, t);
         // new_token->parent = t; new_token->wme = w;
         items.push_front(new_token);
@@ -335,6 +343,7 @@ ostream& operator << (ostream &os, const JoinNode &join) {
 
 // pg 37: inferred
 struct ProductionNode : public ReteNode {
+    vector<Token *> items;
     string rhs;
 
     // activation from alpha node
@@ -347,9 +356,10 @@ struct ProductionNode : public ReteNode {
         cout << "(" << *t << " ~ " << rhs << ")";
     }
     void left_activation(Token *t, WME *w)
-    { 
-        if (t) { cout << "## (PROD " << *t << ": " << *w << " ~ " << rhs << ") ##\n"; }
-        else { cout << "## (PROD " << "0x0" << ": " << *w << " ~ " << rhs << ") ##\n"; }
+    {
+        t = new Token(w, t);
+        items.push_back(t);
+        cout << "## (PROD " << *t <<  " ~ " << rhs << ") ##\n";
     }
         // assert(false && "have not thought about it"); }
 };
@@ -423,7 +433,6 @@ void update_new_node_with_matches_from_above(ReteNode *newNode) {
     assert(parent != nullptr);
 
     if (BetaMemory *bm = dynamic_cast<BetaMemory *>(parent)) {
-        assert(false && "parent is β");
         for (Token *t: bm->items) {
             newNode->left_activation(t);
         }
@@ -633,18 +642,20 @@ ProductionNode *add_production(Rete &r, vector<Condition> lhs, string rhs) {
     ReteNode *currentNode = r.beta_top;
     vector<Condition> earlierConds;
 
-    list<TestAtJoinNode> tests = get_join_tests_from_condition(r, lhs[0], earlierConds);
+    list<TestAtJoinNode> tests = 
+      get_join_tests_from_condition(r, lhs[0], earlierConds);
     AlphaMemory *am = build_or_share_alpha_memory_dataflow(r, lhs[0]);
     currentNode = build_or_share_join_node(r, currentNode, am, tests);
+    earlierConds.push_back(lhs[0]);
 
     for(int i = 1; i < lhs.size(); ++i) {
         // get the current beat memory node M[i]
         currentNode = build_or_share_beta_memory_node(r, currentNode);
         // get the join node J[i] for condition c[u[
-        earlierConds.push_back(lhs[i-1]);
         tests = get_join_tests_from_condition(r, lhs[i], earlierConds);
         am = build_or_share_alpha_memory_dataflow(r, lhs[i]);
         currentNode = build_or_share_join_node(r, currentNode, am, tests);
+        earlierConds.push_back(lhs[i]);
     }
 
     // build a new production node, make it a child of current node
@@ -742,7 +753,7 @@ void printGraphViz(Rete &r, FILE *f) {
     for (int i = 0; i < r.joinnodes.size(); ++i) {
         const JoinNode *node = r.joinnodes[i];
         const string uidstr = std::to_string(uid++);
-        ss << "(join-" << i << " ";
+        ss << "(join-" << i << "; ";
         for (TestAtJoinNode test : node->tests) { 
           ss 
             << test.field_of_arg1 
@@ -783,17 +794,17 @@ void printGraphViz(Rete &r, FILE *f) {
     }
 
     // need to print tokens? :( 
-    /*
     for (BetaMemory *node : r.betamemories) {
-        for (ReteNode *succ : node->successors) {
+        for (ReteNode *succ : node->children) {
             Agedge_t *e = agedge(g, nodes[node], nodes[succ], nullptr, 1);
         }
 
-        for (WME * wme : node->items) {
-            Agedge_t *e = agedge(g, nodes[wme], nodes[node], nullptr, 1);
+        for (Token *t : node->items) {
+          for(Token *cur = t; cur != nullptr; cur = cur->parent) {
+            Agedge_t *e = agedge(g, nodes[cur->wme], nodes[node], nullptr, 1);
+          }
         }
     }
-    */
 
     for (ConstTestNode *node : r.consttestnodes) {
         for(ConstTestNode *succ : node->children) {
@@ -856,7 +867,7 @@ void test1() {
     
     cout << "adding production\n";
 
-    add_production(rete,
+    ProductionNode *p = add_production(rete,
             std::vector<Condition>({Condition(Field::var("x"),
                     Field::constant("on"), Field::var("y"))}),
             "prod1");
@@ -864,7 +875,10 @@ void test1() {
     cout << "added production\n";
 
     addWME(rete, new WME("B1", "on", "B2"));
+    assert(p->items.size() == 1);
+
     addWME(rete, new WME("B1", "on", "B3"));
+    assert(p->items.size() == 2);
 
     cout << "---\n";
     FILE *f = fopen("test1.dot", "w");
@@ -888,10 +902,12 @@ void test2() {
     addWME(rete, new WME("B1", "on", "B2"));
     addWME(rete, new WME("B1", "on", "B3"));
 
-    add_production(rete, 
+    ProductionNode *p = add_production(rete, 
               std::vector<Condition>({Condition(Field::var("x"),
                     Field::constant("on"), Field::var("y"))}),
             "prod1");
+
+    assert(p->items.size() == 2);
 
     cout << "---\n";
     FILE *f = fopen("test2.dot", "w");
@@ -918,10 +934,11 @@ void test3() {
     addWME(rete, new WME("B1", "on", "B3"));
     addWME(rete, new WME("B1", "color", "red"));
 
-    add_production(rete, 
+    ProductionNode *p1 = add_production(rete, 
               std::vector<Condition>({Condition(Field::var("x"),
                     Field::constant("on"), Field::var("y"))}),
             "prod1");
+    assert(p1->items.size() == 2);
 
     cout << "---\n";
     FILE *f = fopen("test3.dot", "w");
@@ -944,13 +961,14 @@ void test4() {
 
     addWME(rete, new WME("B1", "on", "B2"));
     addWME(rete, new WME("B1", "on", "B3"));
-    addWME(rete, new WME("B1", "on", "B1"));
+    addWME(rete, new WME("B1", "on", "B1")); // MATCH
     addWME(rete, new WME("B1", "color", "red"));
 
-    add_production(rete, 
+    ProductionNode *p1 = add_production(rete, 
               std::vector<Condition>({Condition(Field::var("x"),
                     Field::constant("on"), Field::var("x"))}),
             "prod1");
+    assert(p1->items.size() == 1);
 
     cout << "---\n";
     FILE *f = fopen("test4.dot", "w");
@@ -963,6 +981,7 @@ void test4() {
 
 // test a production with 2 conditions. This will
 // test chaining of join nodes.
+// only (B1 on B2) (B2 left-of B3) ought to join
 void test5() {
     cout << "====test 5:====\n";
 
@@ -971,10 +990,9 @@ void test5() {
     rete.consttestnodes.push_back(rete.alpha_top);
     rete.beta_top = new ReteDummyTopNode();
 
-    // addWME(rete, new WME("B1", "on", "B2"));
-    // addWME(rete, new WME("B1", "on", "B3"));
-    // addWME(rete, new WME("B1", "on", "B1"));
-    // addWME(rete, new WME("B2", "left-of", "B3"));
+    addWME(rete, new WME("B1", "on", "B2"));
+    addWME(rete, new WME("B1", "on", "B3"));
+    addWME(rete, new WME("B2", "left-of", "B3"));
 
     vector<Condition> conds;
     conds.push_back(Condition(Field::var("x"), Field::constant("on"),
@@ -982,7 +1000,8 @@ void test5() {
     conds.push_back(Condition(Field::var("y"), Field::constant("left-of"),
         Field::var("z")));
 
-    add_production(rete, conds, "prod1");
+    ProductionNode *p1 = add_production(rete, conds, "prod1");
+    assert(p1->items.size() == 1);
 
     cout << "---\n";
     FILE *f = fopen("test5.dot", "w");
