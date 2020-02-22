@@ -88,6 +88,9 @@ using namespace std;
 // instance (Show cond, Show act) => Show (Production cond act) where
 //   show (Production cond act) = brackets [show cond, "-->", show act]
 struct Token;
+struct WME;
+struct AlphaMemory;
+struct JoinNode;
 
 enum class WMEFieldType { None = (-1), Ident = 0, Attr = 1, Val = 2, NumFields=3 };
 
@@ -129,20 +132,12 @@ struct ReteNode {
 };
 
 
-// inferred from diagrams on pg. 10
-struct ReteDummyTopNode : public ReteNode {
-    void right_activation(WME *w) { assert(false && "unimplement ReteDummyTopNode"); }
-    // activation from beat node
-    void left_activation(Token *t) { assert(false && "unimplement ReteDummyTopNode"); }
-    void left_activation(Token *t, WME *w) { assert(false && "unimplement ReteDummyTopNode"); }
-};
-
-
 // pg 21
 struct AlphaMemory {
     list<WME*> items;
-    list<ReteNode *> successors;
+    list<JoinNode *> successors;
 };
+
 ostream &operator << (ostream &os, const AlphaMemory &am) {
     os <<  "(alpha-memory:" << am.items.size() << " ";
     for (WME *wme : am.items) os << *wme << " ";
@@ -227,26 +222,14 @@ ostream &operator << (ostream &os, const Token &t) {
 
 
 // pg 22
-struct BetaMemory : public ReteNode {
+struct BetaMemory { 
+    JoinNode *parent;
     list<Token*> items;
+    vector<JoinNode *> children;
 
-    void right_activation(WME *w) override { assert(false && "unimplemented"); }
-    void left_activation(Token *t) override { assert(false && "unimplemented"); }
     // pg 23: dodgy! the types are different from BetaMemory and their children
     // updates
-    void left_activation(Token *t, WME *w) override {
-        cout << __PRETTY_FUNCTION__ << " | t: ";
-        if (t) { cout << *t; } else { cout << "nullptr"; } 
-        cout << " | wme: " << w << "\n";
-
-        Token *new_token = new Token(w, t);
-        // new_token->parent = t; new_token->wme = w;
-        items.push_front(new_token);
-        for (ReteNode *child : children) { child->left_activation(t); }
-    }
-
-    void insert_token_at_head(Token *t) {
-    }
+    virtual void left_activation(Token *t, WME *w);
 };
 
 ostream& operator <<(ostream &os, const BetaMemory &bm) {
@@ -281,48 +264,41 @@ ostream& operator << (ostream &os, const TestAtJoinNode &test) {
 
 
 /// pg 24
-struct JoinNode : public ReteNode {
-    AlphaMemory *amem;
-    list<TestAtJoinNode> tests;
+struct JoinNode {
+  AlphaMemory *amem_src;
+  BetaMemory *bmem_src;
 
-    JoinNode() : ReteNode(), amem(nullptr) {};
+  vector<BetaMemory *> children;
+  vector<TestAtJoinNode> tests;
 
-    // pg 24
-    void right_activation(WME *w) override {
-        cout << __PRETTY_FUNCTION__ << " | w: " <<  w << "\n";
-        if (BetaMemory *beta_parent = dynamic_cast<BetaMemory *>(parent)) {
-            // does not have to be; can be a dummy top node.
-            // assert(beta_parent != nullptr);
-            for (Token *t : beta_parent->items) {
-                if (!this->perform_join_tests(t, w)) continue;
-                for(ReteNode *child: children) child->left_activation(t, w);
-            }
-        }
-        else if (ReteDummyTopNode *dummy = dynamic_cast<ReteDummyTopNode *>(parent)) {
-            // assert(false && "what do I do here?");
-            // this is okay
-            for(ReteNode *child: children) child->left_activation(nullptr, w);
-        }
-        else {
-            assert(false && "unknown parent for joinnode");
-        }
+  JoinNode() : amem_src(nullptr), bmem_src(nullptr) {};
+
+   // pg 24
+   void right_activation(WME *w) {
+       if (bmem_src) {
+         for (Token *t : bmem_src->items) {
+           if (!this->perform_join_tests(t, w)) continue;
+           for(BetaMemory *child: children) child->left_activation(t, w);
+         }
+       } else {
+           for(BetaMemory *child: children) { child->left_activation(nullptr, w); }
+       }
     }
 
-    // pg 25
-    void left_activation(Token *t) override {
-        cout << __PRETTY_FUNCTION__ << " | t: " << *t << "\n";
-        for(WME *w : amem->items) {
-            if (!this->perform_join_tests(t, w)) continue;
-            for(ReteNode *child: children) child->left_activation(t, w);
-        }
-    }
-
-    void left_activation(Token *t, WME *w) override { 
-        assert(false && "unimplemented");
-    }
+   // pg 25
+   void left_activation(Token *t) {
+     assert(this->amem_src);
+     for(WME *w : amem_src->items) {
+       if (!this->perform_join_tests(t, w)) continue;
+       for(BetaMemory *child: children) child->left_activation(t, w);
+     }
+   }
 
     // pg 25
     bool perform_join_tests(Token *t, WME *w) const {
+        if (!bmem_src) return true;
+        assert(amem_src);
+
         for (TestAtJoinNode test : tests) {
             string arg1 = w->get_field(test.field_of_arg1);
             WME *wme2 = t->index(test.condition_number_of_arg2);
@@ -342,27 +318,29 @@ ostream& operator << (ostream &os, const JoinNode &join) {
     return os;
 }
 
+void BetaMemory::left_activation(Token *t, WME *w) {
+        cout << __PRETTY_FUNCTION__ << " | t: ";
+        if (t) { cout << *t; } else { cout << "nullptr"; } 
+        cout << " | wme: " << w << "\n";
+
+        Token *new_token = new Token(w, t);
+        // new_token->parent = t; new_token->wme = w;
+        items.push_front(new_token);
+        for (JoinNode *child : children) { child->left_activation(t); }
+ }
+
+
 // pg 37: inferred
-struct ProductionNode : public ReteNode {
+struct ProductionNode : public BetaMemory {
     vector<Token *> items;
     string rhs;
 
-    // activation from alpha node
-    void right_activation(WME *w)
-    { assert(false && "have not thought about it");
-    }
-    // activation from beat node
-    void left_activation(Token *t)
-    { 
-        cout << "(" << *t << " ~ " << rhs << ")";
-    }
-    void left_activation(Token *t, WME *w)
+    void left_activation(Token *t, WME *w) override
     {
         t = new Token(w, t);
         items.push_back(t);
         cout << "## (PROD " << *t <<  " ~ " << rhs << ") ##\n";
     }
-        // assert(false && "have not thought about it"); }
 };
 
 
@@ -375,8 +353,6 @@ ostream& operator << (ostream &os, const ProductionNode &production) {
 // no page; hold all global state
 struct Rete {
     ConstTestNode *alpha_top;
-    ReteNode *beta_top;
-
     // alphabetically ordered for ease of use
     vector<AlphaMemory *> alphamemories;
     vector<BetaMemory *> betamemories;
@@ -393,11 +369,12 @@ struct Rete {
 
 
 
+
 // pg 21
 void alpha_memory_activation(AlphaMemory *node, WME *w) {
     node->items.push_front(w);
     cout << __PRETTY_FUNCTION__ << "| node: " << *node << " | wme: " << w << "\n";
-    for (ReteNode *child : node->successors) child->right_activation(w);
+    for (JoinNode *child : node->successors) child->right_activation(w);
 
 }
 
@@ -428,64 +405,45 @@ void addWME(Rete &r, WME *w) {
 }
 
 // pg 38
-void update_new_node_with_matches_from_above(ReteNode *newNode) {
-    printf("%s newNode: %p\n", __FUNCTION__, newNode);
-    ReteNode *parent = newNode->parent;
-    assert(parent != nullptr);
+void update_new_node_with_matches_from_above(BetaMemory *beta) {
+      JoinNode *join = beta->parent;
+      vector<BetaMemory *> savedListOfChildren = join->children;
+      // WTF?
+      join->children = { beta };
 
-    if (BetaMemory *bm = dynamic_cast<BetaMemory *>(parent)) {
-        for (Token *t: bm->items) {
-            newNode->left_activation(t);
-        }
-    } else if (JoinNode *join = dynamic_cast<JoinNode *>(parent)) {
-        list<ReteNode *> savedListOfChildren = parent->children;
-
-        // WTF?
-        join->children = { newNode };
-        for(WME *item : join->amem->items) { join->right_activation(item); }
-        join->children = savedListOfChildren;
-    } else { assert(false && "unknown parent type"); }
-
+      // push alpha memory through join node.
+      for(WME *item : join->amem_src->items) { join->right_activation(item); }
+      join->children = savedListOfChildren;
 }
 
 // pg 34
-BetaMemory *build_or_share_beta_memory_node(Rete &r, ReteNode *parent) {
-    for (ReteNode *child : parent->children) {
-        BetaMemory *beta = dynamic_cast<BetaMemory*>(child);
-        if (beta) return beta;
-    }
+BetaMemory *build_or_share_beta_memory_node(Rete &r, JoinNode *parent) {
+    for (BetaMemory *child : parent->children) { return child; }
+
     BetaMemory *newbeta = new BetaMemory;
     r.betamemories.push_back(newbeta);
     newbeta->parent = parent;
     printf("%s newBeta: %p | parent: %p\n", __FUNCTION__, newbeta, newbeta->parent);
     //newbeta->children = nullptr;
     //newbeta->items = nullptr;
-    parent->children.push_front(newbeta);
+    parent->children.push_back(newbeta);
     update_new_node_with_matches_from_above(newbeta);
     return newbeta;
 }
 
 // pg 34
-JoinNode *build_or_share_join_node(Rete &r, ReteNode *parent, AlphaMemory *am,
-        list<TestAtJoinNode> tests) {
-    assert(parent != nullptr);
-    /* HACK: disable reuse
-    for (ReteNode *child : parent->children) {
-        JoinNode *join = dynamic_cast<JoinNode*>(child);
-        if (join && join->amem == am && join->tests == tests) return join;
-    }
-    */
+JoinNode *build_or_share_join_node(Rete &r, BetaMemory *bmem, AlphaMemory *amem,
+        vector<TestAtJoinNode> tests) {
+    // bmem can be nullptr in top node case.
+    // assert(bmem != nullptr);
+    assert(amem != nullptr);
 
     JoinNode *newjoin = new JoinNode;
     r.joinnodes.push_back(newjoin);
-    newjoin->parent = parent; parent->children.push_front(newjoin);
-    printf("%s newjoin: %p | parent: %p | parent type: %s\n", 
-            __FUNCTION__, 
-            newjoin, 
-            newjoin->parent, 
-            typeid(*newjoin->parent).name());
-    newjoin->tests = tests; newjoin->amem = am;
-    am->successors.push_front(newjoin);
+    newjoin->bmem_src = bmem;
+    newjoin->tests = tests; newjoin->amem_src = amem;
+    amem->successors.push_front(newjoin);
+    if (bmem ) { bmem->children.push_back(newjoin); }
     return newjoin;
 }
 
@@ -540,9 +498,9 @@ void lookup_earlier_cond_with_field(const vector<Condition> &earlierConds,
 
 // pg 35
 // pg 35: supposedly, nearness is not a _hard_ requiement.
-list<TestAtJoinNode> get_join_tests_from_condition(Rete &_, Condition c, 
+vector<TestAtJoinNode> get_join_tests_from_condition(Rete &_, Condition c, 
         vector<Condition> earlierConds) {
-    list<TestAtJoinNode> result;
+    vector<TestAtJoinNode> result;
 
     for(int f = 0; f < (int)WMEFieldType::NumFields; ++f) {
         if (c.attrs[f].type != FieldType::Var) continue;
@@ -640,36 +598,46 @@ ProductionNode *add_production(Rete &r, vector<Condition> lhs, string rhs) {
 
     // PITFALL: this says "dummy top node", not srure if this is the
     // same as alpha_top.
-    ReteNode *currentNode = r.beta_top;
     vector<Condition> earlierConds;
 
-    list<TestAtJoinNode> tests = 
+    vector<TestAtJoinNode> tests = 
       get_join_tests_from_condition(r, lhs[0], earlierConds);
     AlphaMemory *am = build_or_share_alpha_memory_dataflow(r, lhs[0]);
-    currentNode = build_or_share_join_node(r, currentNode, am, tests);
+
+    BetaMemory *currentBeta = nullptr;
+    JoinNode * currentJoin = build_or_share_join_node(r, currentBeta, am, tests);
     earlierConds.push_back(lhs[0]);
 
     for(int i = 1; i < lhs.size(); ++i) {
         // get the current beat memory node M[i]
-        currentNode = build_or_share_beta_memory_node(r, currentNode);
+        currentBeta = build_or_share_beta_memory_node(r, currentJoin);
         // get the join node J[i] for condition c[u[
         tests = get_join_tests_from_condition(r, lhs[i], earlierConds);
         am = build_or_share_alpha_memory_dataflow(r, lhs[i]);
-        currentNode = build_or_share_join_node(r, currentNode, am, tests);
+        currentJoin = build_or_share_join_node(r, currentBeta, am, tests);
         earlierConds.push_back(lhs[i]);
     }
 
     // build a new production node, make it a child of current node
     ProductionNode *prod = new ProductionNode; 
     r.productions.push_back(prod);
-    prod->parent = currentNode;
+    prod->parent = currentJoin; // currentJoin is guaranteed to be valid
     printf("%s prod: %p | parent: %p\n", __FUNCTION__, prod, prod->parent);
     prod->rhs = rhs;
-    currentNode->children.push_front(prod);
+    currentJoin->children.push_back(prod);
     // update new-node-with-matches-from-above (the new production node)
     update_new_node_with_matches_from_above(prod);
     return prod;
 }
+
+
+
+
+
+// =========================
+// END RETE, START EXAMPLES
+// =========================
+
 
 
 // convert data of the form";
@@ -691,10 +659,6 @@ string table1d_to_html(string heading, vector<string> data) {
   return s;
 }
 
-
-// =========================
-// END RETE, START EXAMPLES
-// =========================
 void graphAlphaNet(Rete &r, Agraph_t *g, int &uid) {
     Agraph_t *galpha = agsubg(g, (char *)"cluster-alpha-network", 1);
     Agraph_t *gwme = agsubg(galpha, (char *)"cluster-wme", 1);
@@ -739,7 +703,7 @@ void graphAlphaNet(Rete &r, Agraph_t *g, int &uid) {
     }
 
     for (AlphaMemory *node : r.alphamemories) {
-        for (ReteNode *succ : node->successors) {
+        for (JoinNode *succ : node->successors) {
           auto it = nodes.find(succ);
           if (it == nodes.end()) continue;
           Agedge_t *e = agedge(g, nodes[node], nodes[succ], nullptr, 1);
@@ -777,16 +741,6 @@ void graphBetaNet(Rete &r, Agraph_t *g, int &uid) {
   map<const void *, Agnode_t*> nodes;
   stringstream ss;
 
-    {
-        const string uidstr = std::to_string(uid++);
-        // ss << *r.beta_top;
-        nodes[r.beta_top] = agnode(gbeta, (char *) uidstr.c_str(), true);
-        agsafeset(nodes[r.beta_top], 
-                (char *)"fontname", (char*)"monospace", (char *)"");
-        agsafeset(nodes[r.beta_top], (char *)"shape", (char *)"box", (char *)"");
-        agsafeset(nodes[r.beta_top], (char*)"label", (char*)"beta-top", (char*)"");
-        ss.str("");
-    }
 
     for (int i =0; i < r.betamemories.size(); ++i) {
         const BetaMemory *node = r.betamemories[i];
@@ -868,33 +822,22 @@ void graphBetaNet(Rete &r, Agraph_t *g, int &uid) {
     }
 
 
-    // top node
-    for(ReteNode *succ : r.beta_top->children) {
-            Agedge_t *e = agedge(g, nodes[r.beta_top], nodes[succ], nullptr, 1);
-    }
-
     // need to print tokens? :( 
     for (BetaMemory *node : r.betamemories) {
-        for (ReteNode *succ : node->children) {
+        for (JoinNode *succ : node->children) {
             Agedge_t *e = agedge(g, nodes[node], nodes[succ], nullptr, 1);
         }
 
     }
 
     for (JoinNode *node : r.joinnodes) {
-        for(ReteNode *succ : node->children) {
-            Agedge_t *e = agedge(g, nodes[node], nodes[succ], nullptr, 1);
-        }
-    }
-
-    for (ProductionNode *node : r.productions) {
-        for(ReteNode *succ : node->children) {
+        for(BetaMemory *succ : node->children) {
             Agedge_t *e = agedge(g, nodes[node], nodes[succ], nullptr, 1);
         }
     }
 
     for (AlphaMemory *node : r.alphamemories) {
-        for (ReteNode *succ : node->successors) {
+        for (JoinNode *succ : node->successors) {
           auto it = nodes.find(succ);
           if (it == nodes.end()) continue;
           Agedge_t *e = agedge(g, nodes[node], nodes[succ], nullptr, 1);
@@ -933,8 +876,6 @@ void test1() {
     Rete rete;
     rete.alpha_top = ConstTestNode::dummy_top();
     rete.consttestnodes.push_back(rete.alpha_top);
-    rete.beta_top = new ReteDummyTopNode();
-    printf("beta_top: %p\n", rete.beta_top);
 
     // rete.working_memory.push_back(WME("B1", "color", "red"));
     // rete.working_memory.push_back(WME("B1", "on", "table"));
@@ -978,7 +919,6 @@ void test2() {
     Rete rete;
     rete.alpha_top = ConstTestNode::dummy_top();
     rete.consttestnodes.push_back(rete.alpha_top);
-    rete.beta_top = new ReteDummyTopNode();
 
 
     addWME(rete, new WME("B1", "on", "B2"));
@@ -989,7 +929,6 @@ void test2() {
                     Field::constant("on"), Field::var("y"))}),
             "prod1");
 
-    assert(p->items.size() == 2);
 
     cout << "---\n";
     FILE *dotf = fopen("test2.dot", "w");
@@ -997,6 +936,8 @@ void test2() {
     printGraphViz(rete, dotf, pngf);
     fclose(dotf);
     fclose(pngf);
+
+    assert(p->items.size() == 2);
 
     cout << "====\n";
 
@@ -1011,7 +952,6 @@ void test3() {
     Rete rete;
     rete.alpha_top = ConstTestNode::dummy_top();
     rete.consttestnodes.push_back(rete.alpha_top);
-    rete.beta_top = new ReteDummyTopNode();
 
 
     addWME(rete, new WME("B1", "on", "B2"));
@@ -1045,7 +985,6 @@ void test4_disabled() {
     Rete rete;
     rete.alpha_top = ConstTestNode::dummy_top();
     rete.consttestnodes.push_back(rete.alpha_top);
-    rete.beta_top = new ReteDummyTopNode();
 
 
     addWME(rete, new WME("B1", "on", "B2"));
@@ -1080,7 +1019,6 @@ void test5() {
     Rete rete;
     rete.alpha_top = ConstTestNode::dummy_top();
     rete.consttestnodes.push_back(rete.alpha_top);
-    rete.beta_top = new ReteDummyTopNode();
 
     addWME(rete, new WME("B1", "on", "B2"));
     addWME(rete, new WME("B1", "on", "B3"));
@@ -1111,7 +1049,6 @@ void test_from_paper() {
     Rete rete;
     rete.alpha_top = ConstTestNode::dummy_top();
     rete.consttestnodes.push_back(rete.alpha_top);
-    rete.beta_top = new ReteDummyTopNode();
 
 
     addWME(rete, new WME("B1", "on", "B2"));
