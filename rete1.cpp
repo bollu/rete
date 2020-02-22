@@ -137,7 +137,7 @@ ostream &operator << (ostream &os, const AlphaMemory &am) {
 struct ConstTestNode {
     WMEFieldType field_to_test;
     string field_must_equal;
-    AlphaMemory *output_memory;
+    AlphaMemory *output_memory; // can be nullptr.
     vector<ConstTestNode *> children;
 
     ConstTestNode(WMEFieldType field_to_test, 
@@ -165,8 +165,10 @@ std::ostream & operator << (std::ostream &os, WMEFieldType field) {
 }
 
 std::ostream& operator << (std::ostream &os, const ConstTestNode &node) {
-    os << "(const-test " << node.field_to_test << " =? " << node.field_must_equal << ")";
-    return os;
+    if(node.field_to_test == WMEFieldType::None) {
+       return os << "(const-test dummy)";
+    }
+    return os << "(const-test " << node.field_to_test << " =? " << node.field_must_equal << ")";
 }
 
 
@@ -348,9 +350,6 @@ struct Rete {
     // presupposes knowledge of a collection of WMEs
     vector<WME*> working_memory;
 };
-
-
-
 
 
 // pg 21
@@ -671,8 +670,11 @@ void graphAlphaNet(Rete &r, Agraph_t *g, int &uid) {
     for (int i = 0; i < r.consttestnodes.size(); ++i) {
         const string uidstr = std::to_string(uid++);
         const ConstTestNode *node = r.consttestnodes[i];
-        ss << "(" << 
-          node->field_to_test << " =? " << node->field_must_equal << ")";
+        if (node->field_to_test == WMEFieldType::None) {
+          ss << "(const-test-dummy)";
+        } else  {
+          ss << "(" << node->field_to_test << " =? " << node->field_must_equal << ")";
+        }
         const string s = ss.str();
         nodes[node] = agnode(galpha, (char *) uidstr.c_str(), true);
         agsafeset(nodes[node], (char *)"fontname", (char *)"monospace", (char *)"");
@@ -696,7 +698,6 @@ void graphAlphaNet(Rete &r, Agraph_t *g, int &uid) {
         if (node->output_memory){
             Agedge_t *e = agedge(g, nodes[node], nodes[node->output_memory], nullptr, 1);
         }
-
     }
 
 }
