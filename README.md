@@ -20,10 +20,14 @@ The implementation is from
 
 ### Example Rete diagrams to learn from:
 
+##### Test1
 ![test1.png](./website-images/test1.png)
+##### Test2
 ![test2.png](./website-images/test2.png)
+##### Test3
 ![test3.png](./website-images/test3.png)
-![test4.png](./website-images/test4.png)
+##### Test5
 ![test5.png](./website-images/test5.png)
+##### Test from paper
 ![test_from_paper.png](./website-images/test_from_paper.png)
 
