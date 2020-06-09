@@ -17,3 +17,13 @@ The implementation is from
    than enlightening. We also abandon the `left/right` convention, and simply
    speak of `alpha-side/beta-side`.
 
+
+### Example Rete diagrams to learn from:
+
+![test1.png](./website-images/test1.png)
+![test2.png](./website-images/test2.png)
+![test3.png](./website-images/test3.png)
+![test4.png](./website-images/test4.png)
+![test5.png](./website-images/test5.png)
+![test_from_paper.png](./website-images/test_from_paper.png)
+
